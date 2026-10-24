@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchAddressTxs, type ElectrsTx } from '../lib/electrs';
+import { getPendingTxs } from '../lib/pending';
 
 interface HistoryProps {
   address: string;
@@ -39,6 +40,18 @@ export function History({ address }: HistoryProps) {
         setLoading(true);
         const data: ElectrsTx[] = await fetchAddressTxs(address);
         if (cancelled) return;
+        const known = new Set(data.map((t) => t.txid));
+        const ledgerRows: HistoryRow[] = [];
+        for (const pending of getPendingTxs(address)) {
+          if (known.has(pending.txid)) continue;
+          ledgerRows.push({
+            txid: pending.txid,
+            incoming: pending.change && pending.change.address === address ? pending.change.value : 0,
+            outgoing: pending.spent.reduce((sum, sp) => sum + sp.value, 0),
+            timestamp: Math.floor(pending.createdAt / 1000),
+            confirmed: false,
+          });
+        }
         const rows: HistoryRow[] = data.map((tx) => {
           let incoming = 0;
           let outgoing = 0;
@@ -56,7 +69,7 @@ export function History({ address }: HistoryProps) {
             confirmed: tx.status.confirmed,
           };
         });
-        setTxs(rows);
+        setTxs([...ledgerRows, ...rows]);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load history');

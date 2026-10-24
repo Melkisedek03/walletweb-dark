@@ -25,6 +25,18 @@ Your keys are generated and stored **only in your browser**, encrypted with your
 - **Copy recovery phrase** — one-click copy for safe backup
 - **Modern dark UI** — clean, responsive design inspired by MetaMask and Phantom
 
+## Pending transactions
+
+After a send is broadcast, the wallet records the transaction locally
+(public data only: txid, spent outpoints, change output, raw hex).
+Change from an unconfirmed transaction can be spent again, and inputs
+already spent by a pending transaction stay locked until the pending
+transaction confirms or disappears from the mempool. Balances are
+shown as confirmed, pending, and available (confirmed spendable plus
+unconfirmed change, minus locked inputs). This matters on chains
+with long block intervals, where change would otherwise look missing
+for hours.
+
 ## Security
 
 - **Non-custodial / Self-custody** — your private keys never leave your browser

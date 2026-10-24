@@ -141,6 +141,7 @@ function App() {
             balanceBech32={wallet.balancebech32}
             isBech32={wallet.trxType}
             onDone={() => {
+              wallet.refreshBalance();
               wallet.refreshBalanceBech32();
               wallet.setView('dashboard');
               wallet.setBech32(true);

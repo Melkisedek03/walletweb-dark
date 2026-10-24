@@ -8,7 +8,8 @@ import {
   loadWallet,
   deleteWallet,
 } from '../lib/wallet';
-import { fetchBalance, type AddressBalance } from '../lib/electrs';
+import { fetchBalance, fetchUtxos, fetchTxStatus, type AddressBalance } from '../lib/electrs';
+import { getPendingTxs, removePendingTx, getLockedOutpoints, getPendingUtxos } from '../lib/pending';
 
 export type WalletView =
   | 'landing'
@@ -157,25 +158,50 @@ export function useWallet() {
     });
   }, []);
 
+  const refreshOne = useCallback(async (addr: string): Promise<AddressBalance | null> => {
+    try {
+      const stats = await fetchBalance(addr);
+      // Reconcile the pending ledger: drop a pending transaction once
+      // its change is confirmed, or once it is gone from the chain
+      // (status lookup returns nothing). Otherwise keep it locked.
+      try {
+        const confirmedUtxos = await fetchUtxos(addr);
+        const confirmedKeys = new Set(confirmedUtxos.map((u) => `${u.txid}:${u.vout}`));
+        for (const pending of getPendingTxs(addr)) {
+          if (pending.change && confirmedKeys.has(`${pending.change.txid}:${pending.change.vout}`)) {
+            removePendingTx(addr, pending.txid);
+            continue;
+          }
+          const status = await fetchTxStatus(pending.txid);
+          if (status === null || status.confirmed) {
+            removePendingTx(addr, pending.txid);
+          }
+        }
+      } catch {
+        // Reconciliation is best-effort; stats below still apply.
+      }
+      const locked = getLockedOutpoints(addr);
+      const confirmedSpendable = (await fetchUtxos(addr).catch(() => []))
+        .filter((u) => !locked.has(`${u.txid}:${u.vout}`))
+        .reduce((sum, u) => sum + u.value, 0);
+      const pendingChange = getPendingUtxos(addr).reduce((sum, u) => sum + u.satoshis, 0);
+      return { ...stats, available: confirmedSpendable + pendingChange };
+    } catch {
+      return null;
+    }
+  }, []);
+
   const refreshBalance = useCallback(async () => {
     if (!state.walletData) return;
-    try {
-      const balance = await fetchBalance(state.walletData.address);
-      setState((s) => ({ ...s, balance }));
-    } catch {
-      // Silently fail balance refresh
-    }
-  }, [state.walletData]);
+    const balance = await refreshOne(state.walletData.address);
+    if (balance) setState((s) => ({ ...s, balance }));
+  }, [state.walletData, refreshOne]);
 
   const refreshBalanceBech32 = useCallback(async () => {
     if (!state.walletData) return;
-    try {
-      const balancebech32 = await fetchBalance(state.walletData.bech32address);
-      setState((s) => ({ ...s, balancebech32 }));
-    } catch {
-      // Silently fail balance refresh
-    }
-  }, [state.walletData]);
+    const balancebech32 = await refreshOne(state.walletData.bech32address);
+    if (balancebech32) setState((s) => ({ ...s, balancebech32 }));
+  }, [state.walletData, refreshOne]);
 
   return {
     ...state,
