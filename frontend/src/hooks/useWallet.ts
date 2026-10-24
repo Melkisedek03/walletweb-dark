@@ -8,7 +8,7 @@ import {
   loadWallet,
   deleteWallet,
 } from '../lib/wallet';
-import { fetchBalance, type BalanceResponse } from '../lib/api';
+import { fetchBalance, type AddressBalance } from '../lib/electrs';
 
 export type WalletView =
   | 'landing'
@@ -28,8 +28,8 @@ export interface WalletState {
   privateKey: Uint8Array | null;
   privateKeyBech32: Uint8Array | null;
   mnemonic: string | null;
-  balance: BalanceResponse | null;
-  balancebech32: BalanceResponse | null;
+  balance: AddressBalance | null;
+  balancebech32: AddressBalance | null;
   trxType: boolean;
   loading: boolean;
   error: string | null;

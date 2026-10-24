@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { buildTransaction, nuxToNusan, nusanToNux } from '../lib/transaction';
-import { broadcastTx } from '../lib/api';
+import { broadcastTx } from '../lib/electrs';
 import { COIN } from '../lib/network';
-import type { BalanceBech32Response, BalanceResponse } from '../lib/api';
+import type { AddressBalance } from '../lib/electrs';
 
 interface SendProps {
   address: string;
@@ -10,8 +10,8 @@ interface SendProps {
   privateKey: Uint8Array;
   privateKeyBech32: Uint8Array;
   isBech32: boolean,
-  balance: BalanceResponse | null;
-  balanceBech32: BalanceBech32Response | null;
+  balance: AddressBalance | null;
+  balanceBech32: AddressBalance | null;
   onDone: () => void;
 }
 
@@ -24,8 +24,8 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
   const [error, setError] = useState<string | null>(null);
   const [txResult, setTxResult] = useState<{ txid: string; fee: number } | null>(null);
 
-  const maxAmount = balance ? balance.balance / COIN : 0;
-  const maxAmountBech32 = balanceBech32 ? balanceBech32.balance / COIN : 0;
+  const maxAmount = balance ? balance.available / COIN : 0;
+  const maxAmountBech32 = balanceBech32 ? balanceBech32.available / COIN : 0;
   const ADDRESS_RE = /^[NX][1-9A-HJ-NP-Za-km-z]{25,34}$/;
   const ADDRESS_BECH = /\bnu1[qQ][a-zA-HJ-NP-Z0-9]{25,39}\b/
 
@@ -52,14 +52,9 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
         isBech32
       });
 
-      const result = await broadcastTx(tx.hex);
-      if (result.result !== null) {
-        setTxResult({ txid: result.result, fee: tx.fee });
-        setStep('success');
-      } else {
-        setError(result.error.message);
-        setStep('confirm');
-      }
+      const txid = await broadcastTx(tx.hex);
+      setTxResult({ txid, fee: tx.fee });
+      setStep('success');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Transaction failed';
       setError(msg);

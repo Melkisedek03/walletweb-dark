@@ -28,5 +28,6 @@ export const COIN = 100_000_000;
 export const MIN_FEE_RATE = 1;
 export const DEFAULT_FEE_RATE = 3;
 
-export const API_BASE = '/api'; //change this 
-export const APINUSA_URL = 'https://apinusa.taobot.org'; //change this
+// Same-origin electrs proxy (nginx /electrs/). No other data source
+// is used by the frontend after Phase 2.
+export const ELECTRS_BASE = '/electrs';

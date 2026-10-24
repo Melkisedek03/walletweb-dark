@@ -2,21 +2,13 @@ import { Psbt, Transaction, payments } from 'bitcoinjs-lib';
 import ECPairFactory, { type ECPairAPI } from 'ecpair';
 import * as ecc from 'tiny-secp256k1';
 import { Buffer } from 'buffer';
-import { nusacoin, COIN, DEFAULT_FEE_RATE, API_BASE } from './network';
-import { fetchUtxos } from './api';
+import { nusacoin, COIN, DEFAULT_FEE_RATE } from './network';
+import { fetchUtxos as fetchElectrsUtxos, fetchTxHex } from './electrs';
 
 let _ECPair: ECPairAPI | null = null;
 function getECPair(): ECPairAPI {
   if (!_ECPair) _ECPair = ECPairFactory(ecc);
   return _ECPair;
-}
-
-// Raw UTXO from API
-export interface ExplorerUTXO {
-  txid: string;
-  vout: number;
-  amount: number;       // in coins (not nusan)
-  scriptPubKey: string;
 }
 
 // Normalized UTXO for internal use
@@ -33,15 +25,24 @@ function estimateSize(inputCount: number, outputCount: number): number {
   return inputCount * 148 + outputCount * 34 + 10;
 }
 
-// Fetch raw transaction hex from backend
-async function fetchRawTxHex(txid: string): Promise<string> {
-  const res = await fetch(`${API_BASE}/rawtx/${txid}`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Failed to fetch raw tx');
-  return data.hex;
+export async function fetchUtxos(address: string): Promise<UTXO[]> {
+  const raw = await fetchElectrsUtxos(address);
+  // Only confirmed UTXOs are returned by the electrs UTXO endpoint.
+  // Unconfirmed change is handled by the pending ledger (Phase 3).
+  return raw
+    .filter((u) => u.status.confirmed)
+    .map((u) => ({
+      txid: u.txid,
+      outputIndex: u.vout,
+      satoshis: u.value,
+      script: '',
+    }));
 }
 
-// Build and sign a transaction
+// Build and sign a transaction.
+// NOTE (Phase 2): legacy behaviour is preserved here and fixed in
+// Phase 3 — legacy send is still a sweep (output = totalInput - fee,
+// no change output). Bech32 send already returns change.
 export async function buildTransaction(params: {
   fromAddress: string;
   fromBech32: string;
@@ -54,28 +55,22 @@ export async function buildTransaction(params: {
 }): Promise<{ hex: string; fee: number; txid: string }> {
   const { fromAddress, fromBech32, toAddress, amountNusan, privateKey, privateKeyBech32, isBech32, feeRate = DEFAULT_FEE_RATE } = params;
 
-  // Fetch UTXOs for the sender
   const utxos: UTXO[] = await fetchUtxos(isBech32 ? fromBech32 : fromAddress);
 
   if (utxos.length === 0) {
     throw new Error('No spendable outputs found');
   }
 
-  // Sort UTXOs largest first for efficient selection
   utxos.sort((a, b) => b.satoshis - a.satoshis);
 
-  // Select UTXOs to cover amount + estimated fee
   const selected: UTXO[] = [];
   let totalInput = 0;
-
-  // Initial fee estimate with 1 input, 2 outputs (payment + change)
   let estimatedFee = estimateSize(1, 2) * feeRate;
 
   for (const utxo of utxos) {
     selected.push(utxo);
     totalInput += utxo.satoshis;
     estimatedFee = estimateSize(selected.length, 2) * feeRate;
-
     if (totalInput >= amountNusan + estimatedFee) {
       break;
     }
@@ -91,16 +86,14 @@ export async function buildTransaction(params: {
     }
   }
 
-  // Fetch raw transactions for nonWitnessUtxo (required for P2PKH signing)
   const rawTxCache = new Map<string, Buffer>();
   for (const utxo of selected) {
     if (!rawTxCache.has(utxo.txid)) {
-      const hex = await fetchRawTxHex(utxo.txid);
+      const hex = await fetchTxHex(utxo.txid);
       rawTxCache.set(utxo.txid, Buffer.from(hex, 'hex'));
     }
   }
 
-  // Build the transaction using Psbt
   const keyPair = getECPair().fromPrivateKey(Buffer.from(privateKey), {
     network: nusacoin,
   });
@@ -113,7 +106,6 @@ export async function buildTransaction(params: {
 
   const psbt = new Psbt({ network: nusacoin });
 
-  // Add inputs with nonWitnessUtxo for P2PKH
   if (!isBech32) {
     for (const utxo of selected) {
       psbt.addInput({
@@ -128,7 +120,6 @@ export async function buildTransaction(params: {
     }
   }
 
-  // Payment output
   if (isBech32) {
     psbt.addOutput({
       address: toAddress,
@@ -141,7 +132,6 @@ export async function buildTransaction(params: {
     });
   }
 
-  // Change output (if change > dust threshold)
   const change = totalInput - amountNusan - estimatedFee;
   const DUST_THRESHOLD = 546;
 
@@ -151,11 +141,9 @@ export async function buildTransaction(params: {
       value: change,
     });
   } else {
-    // No change output, fee absorbs the dust
     estimatedFee = totalInput - amountNusan;
   }
 
-  // Sign all inputs
   for (let i = 0; i < selected.length; i++) {
     if (!isBech32)
       psbt.signInput(i, keyPair);
@@ -174,12 +162,10 @@ export async function buildTransaction(params: {
   };
 }
 
-// Format nusan to NUX display string
 export function nusanToNux(nusan: number): string {
   return (nusan / COIN).toFixed(8);
 }
 
-// Parse NUX string to nusan
 export function nuxToNusan(nux: string): number {
   const value = parseFloat(nux);
   if (isNaN(value) || value < 0) throw new Error('Invalid amount');
