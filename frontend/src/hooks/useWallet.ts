@@ -8,7 +8,7 @@ import {
   loadWallet,
   deleteWallet,
 } from '../lib/wallet';
-import { fetchBalance, fetchUtxos, fetchTxStatus, type AddressBalance } from '../lib/electrs';
+import { fetchBalance, fetchUtxos, fetchTxStatus, fetchOwnMempoolUtxos, type AddressBalance } from '../lib/electrs';
 import { getPendingTxs, removePendingTx, getLockedOutpoints, getPendingUtxos } from '../lib/pending';
 
 export type WalletView =
@@ -181,11 +181,25 @@ export function useWallet() {
         // Reconciliation is best-effort; stats below still apply.
       }
       const locked = getLockedOutpoints(addr);
-      const confirmedSpendable = (await fetchUtxos(addr).catch(() => []))
-        .filter((u) => !locked.has(`${u.txid}:${u.vout}`))
-        .reduce((sum, u) => sum + u.value, 0);
-      const pendingChange = getPendingUtxos(addr).reduce((sum, u) => sum + u.satoshis, 0);
-      return { ...stats, available: confirmedSpendable + pendingChange };
+      const confirmedList = (await fetchUtxos(addr).catch(() => [])).filter(
+        (u) => !locked.has(`${u.txid}:${u.vout}`),
+      );
+      const confirmedSpendable = confirmedList.reduce((sum, u) => sum + u.value, 0);
+      const pendingList = getPendingUtxos(addr);
+      const pendingChange = pendingList.reduce((sum, u) => sum + u.satoshis, 0);
+      // Own unconfirmed outputs must count toward Available too, or the
+      // send form would block an amount the builder can actually fund.
+      // Deduplicate against confirmed and pending-change outputs.
+      const ledgerTxids = new Set(getPendingTxs(addr).map((t) => t.txid));
+      const ownMempool = await fetchOwnMempoolUtxos(addr, ledgerTxids).catch(() => []);
+      const seenKeys = new Set([
+        ...confirmedList.map((u) => `${u.txid}:${u.vout}`),
+        ...pendingList.map((u) => `${u.txid}:${u.outputIndex}`),
+      ]);
+      const ownMempoolSpendable = ownMempool
+        .filter((u) => !seenKeys.has(`${u.txid}:${u.outputIndex}`))
+        .reduce((sum, u) => sum + u.satoshis, 0);
+      return { ...stats, available: confirmedSpendable + pendingChange + ownMempoolSpendable };
     } catch {
       return null;
     }

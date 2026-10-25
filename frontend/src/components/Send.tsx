@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { buildTransaction, fetchUtxos, nuxToNusan, nusanToNux, toUtxo, type UTXO } from '../lib/transaction';
-import { broadcastTx, type AddressBalance } from '../lib/electrs';
-import { getLockedOutpoints, getPendingUtxos, addPendingTx } from '../lib/pending';
+import { broadcastTx, fetchOwnMempoolUtxos, type AddressBalance } from '../lib/electrs';
+import { getLockedOutpoints, getPendingTxs, getPendingUtxos, addPendingTx } from '../lib/pending';
 import { COIN } from '../lib/network';
 
 interface SendProps {
@@ -43,7 +43,26 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
     const pending = getPendingUtxos(sender).map(toUtxo);
     // Pending change is spendable even though it is not confirmed yet.
     // Confirmed UTXOs already spent by a pending transaction stay locked.
-    return [...available, ...pending];
+    // Own unconfirmed outputs derived from mempool transactions are
+    // also spendable, so a wallet is not stuck when its total UTXO
+    // value is sufficient but its confirmed value alone is not. The
+    // derivation filters to transactions created by this wallet, so
+    // third-party incoming mempool outputs stay excluded.
+    const ledgerTxids = new Set(getPendingTxs(sender).map((t) => t.txid));
+    const ownMempool = (await fetchOwnMempoolUtxos(sender, ledgerTxids).catch(() => [])).map(
+      (u): UTXO => ({
+        txid: u.txid,
+        outputIndex: u.outputIndex,
+        satoshis: u.satoshis,
+        script: '',
+        isPending: true,
+      }),
+    );
+    const seen = new Set(
+      [...available, ...pending].map((u) => `${u.txid}:${u.outputIndex}`),
+    );
+    const extra = ownMempool.filter((u) => !seen.has(`${u.txid}:${u.outputIndex}`));
+    return [...available, ...pending, ...extra];
   }
 
   const handleConfirm = async () => {
@@ -218,7 +237,7 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
             </button>
           </div>
           <p className="text-dark-500 text-xs mt-1">
-            Available: {maxAmount.toFixed(8)} NUX (confirmed plus unconfirmed change, minus inputs locked by pending sends)
+            Available: {maxAmount.toFixed(8)} NUX (confirmed plus own unconfirmed outputs, minus inputs locked by pending sends)
           </p>
           <label className="flex items-center gap-2 mt-3 text-sm text-dark-300">
             <input
