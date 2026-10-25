@@ -224,8 +224,8 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
               value={sweep ? maxAmount.toFixed(8) : amount}
               readOnly={sweep}
               onChange={(e) => setAmount(e.target.value)}
-              step="0.00001000"
-              min="0.00001000"
+              step="0.00000001"
+              min="0.00000001"
               max={maxAmount}
             />
             <button
