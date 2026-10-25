@@ -107,6 +107,16 @@ Esplora-compatible electrs service through the same-origin
 | Derivation path BIP44 | `m/44'/662'/0'/0/0` |
 | Derivation path BIP84 | `m/84'/662'/0'/0/0` |
 | Smallest unit | 1 nusan = 0.00000001 NUX |
+| P2P magic (message start) | `0x4e 0x55 0x53 0x41` (`NUSA`) |
+| Proof of work | X11 |
+| P2P port (mainnet) | `28573` |
+| RPC port (mainnet) | `28832` |
+| Signed message prefix | `\x17Nusacoin Signed Message:\n` |
+| HD public version bytes | `0x0488B21E` |
+| HD private version bytes | `0x0488ADE4` |
+| Target block time | 6 minutes |
+| Coinbase maturity | 10 blocks |
+| Dust threshold (wallet) | 546 nusan |
 
 ## Self-Hosting
 
