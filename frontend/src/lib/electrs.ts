@@ -117,6 +117,48 @@ export async function fetchAddressTxs(address: string): Promise<ElectrsTx[]> {
   return merged;
 }
 
+// An unconfirmed output to an address, derived from a mempool transaction.
+// No parent hex is included here: bech32 inputs only need script and
+// value, and legacy inputs fetch the parent hex from electrs on demand.
+export interface MempoolUtxo {
+  txid: string;
+  outputIndex: number;
+  satoshis: number;
+}
+
+// Unconfirmed outputs to `address` from mempool transactions created by
+// this wallet. A mempool transaction counts as own when at least one of
+// its inputs spends an output to `address`, or when its txid is already
+// in the local pending ledger. Third-party incoming mempool outputs are
+// excluded on purpose: their parent can be replaced or evicted.
+// Outputs already spent by another mempool transaction are excluded.
+export async function fetchOwnMempoolUtxos(
+  address: string,
+  ledgerTxids: ReadonlySet<string> = new Set(),
+): Promise<MempoolUtxo[]> {
+  const mempool = await electrsJson<ElectrsTx[]>(
+    `/address/${encodeURIComponent(address)}/txs/mempool`,
+  ).catch(() => [] as ElectrsTx[]);
+  const spent = new Set<string>();
+  for (const tx of mempool) {
+    for (const vin of tx.vin) spent.add(`${vin.txid}:${vin.vout}`);
+  }
+  const out: MempoolUtxo[] = [];
+  for (const tx of mempool) {
+    if (tx.status.confirmed) continue;
+    const isOwn =
+      ledgerTxids.has(tx.txid) ||
+      tx.vin.some((vin) => vin.prevout?.scriptpubkey_address === address);
+    if (!isOwn) continue;
+    tx.vout.forEach((vout, idx) => {
+      if (vout.scriptpubkey_address !== address) return;
+      if (spent.has(`${tx.txid}:${idx}`)) return;
+      out.push({ txid: tx.txid, outputIndex: idx, satoshis: vout.value });
+    });
+  }
+  return out;
+}
+
 export async function fetchTxHex(txid: string): Promise<string> {
   const res = await electrsFetch(`/tx/${encodeURIComponent(txid)}/hex`);
   if (!res.ok) {
