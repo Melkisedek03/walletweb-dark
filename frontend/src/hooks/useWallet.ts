@@ -21,7 +21,8 @@ export type WalletView =
   | 'legacy'
   | 'send'
   | 'receive'
-  | 'history';
+  | 'history'
+  | 'addressbook';
 
 export interface WalletState {
   view: WalletView;

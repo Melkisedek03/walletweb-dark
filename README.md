@@ -21,6 +21,7 @@ Your keys are generated and stored **only in your browser**, encrypted with your
 - **Send NUX** — build and sign transactions entirely in the browser
 - **Receive NUX** — display your address with a QR code for easy sharing
 - **Transaction history** — view your recent incoming and outgoing transactions
+- **Address Book** — save labelled recipient addresses in this browser, and pick them from the send form; entries are never sent to a server
 - **Real-time balance** — fetched directly from the Nusacoin blockchain
 - **Copy recovery phrase** — one-click copy for safe backup
 - **Modern dark UI** — clean, responsive design inspired by MetaMask and Phantom

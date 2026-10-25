@@ -9,13 +9,14 @@ import { Legacy } from './components/Legacy';
 import { Send } from './components/Send';
 import { Receive } from './components/Receive';
 import { History } from './components/History';
+import { AddressBook } from './components/AddressBook';
 import { useWallet, type WalletView } from './hooks/useWallet';
 
 function App() {
   const wallet = useWallet();
 
   const isLoggedIn = !!wallet.privateKeyBech32 && !!wallet.privateKey && !!wallet.walletData;
-  const navViews = ['dashboard', 'legacy', 'send', 'receive', 'history'];
+  const navViews = ['dashboard', 'legacy', 'send', 'receive', 'history', 'addressbook'];
 
   const renderContent = () => {
     switch (wallet.view) {
@@ -146,6 +147,7 @@ function App() {
               wallet.setView('dashboard');
               wallet.setBech32(true);
             }}
+            onAddressBook={() => wallet.setView('addressbook')}
           />
         ) : null;
 
@@ -157,6 +159,11 @@ function App() {
       case 'history':
         return wallet.walletData ? (
           <History address={wallet.trxType ? wallet.walletData.bech32address : wallet.walletData.address} />
+        ) : null;
+
+      case 'addressbook':
+        return wallet.walletData ? (
+          <AddressBook onBack={() => wallet.setView('dashboard')} />
         ) : null;
 
       default:
