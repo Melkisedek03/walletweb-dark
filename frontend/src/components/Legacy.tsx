@@ -1,10 +1,10 @@
 import { useEffect } from 'react';
 import { nusanToNux } from '../lib/transaction';
-import type { BalanceResponse } from '../lib/api';
+import type { AddressBalance } from '../lib/electrs';
 
 interface LegacyProps {
     address: string;
-    balance: BalanceResponse | null;
+    balance: AddressBalance | null;
     isBech32: boolean,
     onSend: () => void;
     onRefreshTwo: () => void;
@@ -17,7 +17,9 @@ export function Legacy({ address, balance, onRefreshTwo, onSend, onHistory }: Le
         const interval = setInterval(onRefreshTwo, 60000); // Refresh every 60s
         return () => clearInterval(interval);
     }, [onRefreshTwo]);
-    const balancenux = balance ? nusanToNux(balance.balance) : '---';
+    const balancenux = balance ? nusanToNux(balance.available) : '---';
+    const confirmedNux = balance ? nusanToNux(balance.confirmed) : '---';
+    const pendingNux = balance ? nusanToNux(balance.mempool) : '---';
     return (
         <div className="space-y-6">
             {/* Balance Card */}
@@ -27,6 +29,16 @@ export function Legacy({ address, balance, onRefreshTwo, onSend, onHistory }: Le
                     {balancenux}
                     <span className="text-lg text-dark-400 ml-2">NUX</span>
                 </h2>
+                {balance && (
+                    <>
+                        <p className="text-sm mt-2 text-dark-300">
+                            Confirmed: {confirmedNux} NUX
+                        </p>
+                        <p className="text-sm mt-1 text-dark-300">
+                            Pending: {pendingNux} NUX
+                        </p>
+                    </>
+                )}
                 {balance && balance.received > 0 && (
                     <p className="text-2xl text-sm mt-2">
                         Total received: {nusanToNux(balance.received)} NUX

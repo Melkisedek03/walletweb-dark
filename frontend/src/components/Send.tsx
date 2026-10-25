@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { buildTransaction, nuxToNusan, nusanToNux } from '../lib/transaction';
-import { broadcastTx } from '../lib/api';
+import { buildTransaction, fetchUtxos, nuxToNusan, nusanToNux, toUtxo, type UTXO } from '../lib/transaction';
+import { broadcastTx, type AddressBalance } from '../lib/electrs';
+import { getLockedOutpoints, getPendingUtxos, addPendingTx } from '../lib/pending';
 import { COIN } from '../lib/network';
-import type { BalanceBech32Response, BalanceResponse } from '../lib/api';
 
 interface SendProps {
   address: string;
@@ -10,8 +10,8 @@ interface SendProps {
   privateKey: Uint8Array;
   privateKeyBech32: Uint8Array;
   isBech32: boolean,
-  balance: BalanceResponse | null;
-  balanceBech32: BalanceBech32Response | null;
+  balance: AddressBalance | null;
+  balanceBech32: AddressBalance | null;
   onDone: () => void;
 }
 
@@ -21,27 +21,39 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
   const [step, setStep] = useState<SendStep>('form');
   const [toAddress, setToAddress] = useState('');
   const [amount, setAmount] = useState('');
+  const [sweep, setSweep] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [txResult, setTxResult] = useState<{ txid: string; fee: number } | null>(null);
+  const [usesPending, setUsesPending] = useState(false);
 
-  const maxAmount = balance ? balance.balance / COIN : 0;
-  const maxAmountBech32 = balanceBech32 ? balanceBech32.balance / COIN : 0;
+  const activeBalance = isBech32 ? balanceBech32 : balance;
+  const maxAmount = activeBalance ? activeBalance.available / COIN : 0;
   const ADDRESS_RE = /^[NX][1-9A-HJ-NP-Za-km-z]{25,34}$/;
   const ADDRESS_BECH = /\bnu1[qQ][a-zA-HJ-NP-Z0-9]{25,39}\b/
 
   const isValidForm =
     (ADDRESS_RE.test(toAddress) || ADDRESS_BECH.test(toAddress)) &&
-    parseFloat(amount) > 0 &&
-    (parseFloat(amount) <= maxAmount || parseFloat(amount) <= maxAmountBech32);
+    (sweep || (parseFloat(amount) > 0 && parseFloat(amount) <= maxAmount));
 
-  const isValidLegacy = (ADDRESS_RE.test(toAddress) || ADDRESS_BECH.test(toAddress)) && maxAmount > 0;
+  async function loadSpendableUtxos(): Promise<UTXO[]> {
+    const sender = isBech32 ? bech32address : address;
+    const confirmed = await fetchUtxos(sender);
+    const locked = getLockedOutpoints(sender);
+    const available = confirmed.filter((u) => !locked.has(`${u.txid}:${u.outputIndex}`));
+    const pending = getPendingUtxos(sender).map(toUtxo);
+    // Pending change is spendable even though it is not confirmed yet.
+    // Confirmed UTXOs already spent by a pending transaction stay locked.
+    return [...available, ...pending];
+  }
 
   const handleConfirm = async () => {
     setStep('sending');
     setError(null);
 
     try {
-      const amountNusan = isBech32 ? nuxToNusan(amount) : maxAmount * COIN;
+      const sender = isBech32 ? bech32address : address;
+      const utxos = await loadSpendableUtxos();
+      const amountNusan = sweep ? 0 : nuxToNusan(amount);
       const tx = await buildTransaction({
         fromAddress: address,
         fromBech32: bech32address,
@@ -49,17 +61,25 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
         amountNusan,
         privateKey,
         privateKeyBech32,
-        isBech32
+        isBech32,
+        utxos,
+        sweep,
       });
 
-      const result = await broadcastTx(tx.hex);
-      if (result.result !== null) {
-        setTxResult({ txid: result.result, fee: tx.fee });
-        setStep('success');
-      } else {
-        setError(result.error.message);
-        setStep('confirm');
-      }
+      const txid = await broadcastTx(tx.hex);
+      setUsesPending(tx.usesPendingInput);
+      // Record the pending transaction before reporting success, so a
+      // second send in the same session sees the locked inputs and
+      // the unconfirmed change.
+      addPendingTx(sender, {
+        txid,
+        hex: tx.hex,
+        spent: tx.spent,
+        change: tx.change,
+        createdAt: Date.now(),
+      });
+      setTxResult({ txid, fee: tx.fee });
+      setStep('success');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Transaction failed';
       setError(msg);
@@ -79,7 +99,7 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
         <div className="card text-left space-y-3">
           <div>
             <p className="text-dark-400 text-xs">Amount</p>
-            <p className="font-mono">{isBech32 ? amount : maxAmount - parseFloat(nusanToNux(txResult.fee))} NUX</p>
+            <p className="font-mono">{sweep ? maxAmount - parseFloat(nusanToNux(txResult.fee)) : amount} NUX</p>
           </div>
           <div>
             <p className="text-dark-400 text-xs">Fee</p>
@@ -89,6 +109,11 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
             <p className="text-dark-400 text-xs">Transaction ID</p>
             <p className="font-mono text-xs break-all text-nux-400">{txResult.txid}</p>
           </div>
+          {usesPending && (
+            <p className="text-yellow-300 text-xs">
+              This transaction spends unconfirmed change. It will confirm together with the previous transaction.
+            </p>
+          )}
         </div>
         <button onClick={onDone} className="btn-primary w-full">
           Done
@@ -109,7 +134,7 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
           </div>
           <div>
             <p className="text-dark-400 text-xs">Amount</p>
-            <p className="text-xl font-bold">{isBech32 ? amount : maxAmount.toFixed(8)} NUX</p>
+            <p className="text-xl font-bold">{sweep ? 'All available (sweep)' : `${amount} NUX`}</p>
           </div>
         </div>
 
@@ -141,13 +166,13 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold">{isBech32 ? 'Send' : 'Sweep'} NUX</h2>
+      <h2 className="text-2xl font-bold">{isBech32 ? 'Send' : 'Send'} NUX</h2>
       <p className="text-dark-400 text-sm font-medium mb-2">{isBech32 ? bech32address : address}</p>
 
       <form
         onSubmit={(e: React.FormEvent) => {
           e.preventDefault();
-          if (isValidForm || isValidLegacy) setStep('confirm');
+          if (isValidForm) setStep('confirm');
         }}
         className="space-y-4"
       >
@@ -177,26 +202,34 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
               type="number"
               className="input-field pr-16"
               placeholder="0.00"
-              value={isBech32 ? amount : maxAmount.toFixed(8)}
-              readOnly={!isBech32}
+              value={sweep ? maxAmount.toFixed(8) : amount}
+              readOnly={sweep}
               onChange={(e) => setAmount(e.target.value)}
               step="0.00001000"
               min="0.00001000"
-              max={isBech32 ? maxAmountBech32 : maxAmount}
+              max={maxAmount}
             />
             <button
               type="button"
-              onClick={() => setAmount(isBech32 ? maxAmountBech32.toFixed(8) : maxAmount.toFixed(8))}
+              onClick={() => setAmount(maxAmount.toFixed(8))}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-nux-400 hover:text-nux-300"
             >
               MAX
             </button>
           </div>
           <p className="text-dark-500 text-xs mt-1">
-            Available: {isBech32 ? maxAmountBech32.toFixed(8) : maxAmount.toFixed(8)} NUX
+            Available: {maxAmount.toFixed(8)} NUX (confirmed plus unconfirmed change, minus inputs locked by pending sends)
           </p>
+          <label className="flex items-center gap-2 mt-3 text-sm text-dark-300">
+            <input
+              type="checkbox"
+              checked={sweep}
+              onChange={(e) => setSweep(e.target.checked)}
+            />
+            Send all (sweep): spend the full available balance minus the fee, with no change output.
+          </label>
         </div>
-        <button type="submit" disabled={isBech32 ? !isValidForm : !isValidLegacy} className="btn-primary w-full">
+        <button type="submit" disabled={!isValidForm} className="btn-primary w-full">
           Continue
         </button>
       </form>

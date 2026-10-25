@@ -1,11 +1,11 @@
 import { useEffect } from 'react';
 import { nusanToNux } from '../lib/transaction';
-import type { BalanceBech32Response } from '../lib/api';
+import type { AddressBalance } from '../lib/electrs';
 
 interface DashboardProps {
   address: string;
   bech32address: string;
-  balance: BalanceBech32Response | null;
+  balance: AddressBalance | null;
   isBech32: boolean;
   onInit: () => void;
   onRefresh: () => void;
@@ -22,8 +22,9 @@ export function Dashboard({ bech32address, balance, onInit, onRefresh, onSend, o
   }, [onRefresh]);
 
 
-  //const [isActive, setIsActive] = useState<boolean>(true);
-  const balancenux = balance ? nusanToNux(balance.balance) : '---';
+  const balancenux = balance ? nusanToNux(balance.available) : '---';
+  const confirmedNux = balance ? nusanToNux(balance.confirmed) : '---';
+  const pendingNux = balance ? nusanToNux(balance.mempool) : '---';
 
 
 
@@ -36,6 +37,16 @@ export function Dashboard({ bech32address, balance, onInit, onRefresh, onSend, o
           {balancenux}
           <span className="text-lg text-dark-400 ml-2">NUX</span>
         </h2>
+        {balance && (
+          <>
+            <p className="text-sm mt-2 text-dark-300">
+              Confirmed: {confirmedNux} NUX
+            </p>
+            <p className="text-sm mt-1 text-dark-300">
+              Pending: {pendingNux} NUX
+            </p>
+          </>
+        )}
         {balance && balance.received > 0 && (
           <p className="text-2xl text-sm mt-2">
             Total received: {nusanToNux(balance.received)} NUX

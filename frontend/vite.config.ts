@@ -16,8 +16,10 @@ export default defineConfig({
   },
   server: {
     allowedHosts: ['dompet.nusacoin.org', '.nusacoin.org'],
+    // Development only. Production serving uses nginx (see nginx/);
+    // no Vite process runs at runtime.
     proxy: {
-      '/api': 'https://explorer.nusacoin.org',
+      '/electrs': 'https://apinux.taobot.org',
     },
   },
   build: {

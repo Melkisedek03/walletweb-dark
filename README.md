@@ -25,6 +25,18 @@ Your keys are generated and stored **only in your browser**, encrypted with your
 - **Copy recovery phrase** — one-click copy for safe backup
 - **Modern dark UI** — clean, responsive design inspired by MetaMask and Phantom
 
+## Pending transactions
+
+After a send is broadcast, the wallet records the transaction locally
+(public data only: txid, spent outpoints, change output, raw hex).
+Change from an unconfirmed transaction can be spent again, and inputs
+already spent by a pending transaction stay locked until the pending
+transaction confirms or disappears from the mempool. Balances are
+shown as confirmed, pending, and available (confirmed spendable plus
+unconfirmed change, minus locked inputs). This matters on chains
+with long block intervals, where change would otherwise look missing
+for hours.
+
 ## Security
 
 - **Non-custodial / Self-custody** — your private keys never leave your browser
@@ -52,7 +64,9 @@ Your keys are generated and stored **only in your browser**, encrypted with your
 └──────────────────────────┘          └──────────────────────────┘
 ```
 
-The backend is a lightweight API proxy that connects to a Nusacoin full node. It only provides:
+There is no application backend. The static frontend talks to an
+Esplora-compatible electrs service through the same-origin
+`/electrs/` proxy in nginx, which provides:
 - Balance lookups
 - UTXO data for transaction building
 - Transaction history
@@ -69,15 +83,17 @@ The backend is a lightweight API proxy that connects to a Nusacoin full node. It
 - Web Crypto API + AES-256-GCM (wallet encryption)
 - qrcode.react (QR code generation)
 
-### Backend
-- Node.js + Express + TypeScript
-- RPC client for Nusacoin Core
-- Explorer API integration (eIquidus)
-- express-rate-limit
+### Data source
+- Esplora-compatible electrs REST API, proxied same-origin at
+  `/electrs/` by nginx (no application backend, no RPC credentials
+  in the wallet deployment)
 
 ### Deployment
-- Docker Compose (optional)
-- Nginx reverse proxy with SSL (Let's Encrypt)
+- Production build only: `npm run build` in `frontend/`, then serve
+  `frontend/dist` with nginx (see `nginx/dompet.nusacoin.org.conf`).
+  No Vite process and no application server run at runtime.
+- Docker Compose (optional, static nginx only)
+- Nginx with SSL (Let's Encrypt)
 
 ## Nusacoin Network Parameters
 
@@ -91,6 +107,16 @@ The backend is a lightweight API proxy that connects to a Nusacoin full node. It
 | Derivation path BIP44 | `m/44'/662'/0'/0/0` |
 | Derivation path BIP84 | `m/84'/662'/0'/0/0` |
 | Smallest unit | 1 nusan = 0.00000001 NUX |
+| P2P magic (message start) | `0x4e 0x55 0x53 0x41` (`NUSA`) |
+| Proof of work | X11 |
+| P2P port (mainnet) | `28573` |
+| RPC port (mainnet) | `28832` |
+| Signed message prefix | `\x17Nusacoin Signed Message:\n` |
+| HD public version bytes | `0x0488B21E` |
+| HD private version bytes | `0x0488ADE4` |
+| Target block time | 6 minutes |
+| Coinbase maturity | 10 blocks |
+| Dust threshold (wallet) | 546 nusan |
 
 ## Self-Hosting
 
@@ -115,30 +141,18 @@ The backend is a lightweight API proxy that connects to a Nusacoin full node. It
    cd ..
    ```
 
-3. Configure environment variables:
+3. Copy the build output to the nginx document root:
+
    ```bash
-   # Set your RPC password
-   export RPC_PASS=your_rpc_password
+   # Example (adjust the path to the deployment)
+   cp -r frontend/dist/* /usr/share/nginx/html/
    ```
 
-4. Start the services:
-   ```bash
-   docker-compose up -d
-   ```
+4. Install `nginx/dompet.nusacoin.org.conf` as the site config and
+   reload nginx. The config serves the static build and proxies
+   `/electrs/` to the electrs service.
 
-5. Configure Nginx as a reverse proxy with SSL for your domain.
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `3001` | API server port |
-| `RPC_HOST` | `127.0.0.1` | Nusacoin RPC host |
-| `RPC_PORT` | `8332` | Nusacoin RPC port |
-| `RPC_USER` | `nux_rpc` | RPC username |
-| `RPC_PASS` | — | RPC password (required) |
-| `CORS_ORIGIN` | `https://dompet.nusacoin.org` | Allowed CORS origin |
-| `EXPLORER_URL` | `http://127.0.0.1:8332` | explorer URL |
+5. Configure SSL with Let's Encrypt (`certbot --nginx -d dompet.nusacoin.org`).
 
 ## License
 

@@ -1,8 +1,17 @@
 import { useEffect, useState } from 'react';
-import { fetchHistory, type HistoryTx } from '../lib/api';
+import { fetchAddressTxs, type ElectrsTx } from '../lib/electrs';
+import { getPendingTxs } from '../lib/pending';
 
 interface HistoryProps {
   address: string;
+}
+
+interface HistoryRow {
+  txid: string;
+  incoming: number;
+  outgoing: number;
+  timestamp: number;
+  confirmed: boolean;
 }
 
 function formatTime(timestamp: number): string {
@@ -19,7 +28,7 @@ function formatTime(timestamp: number): string {
 }
 
 export function History({ address }: HistoryProps) {
-  const [txs, setTxs] = useState<HistoryTx[]>([]);
+  const [txs, setTxs] = useState<HistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,9 +38,38 @@ export function History({ address }: HistoryProps) {
     async function load() {
       try {
         setLoading(true);
-        const data = await fetchHistory(address);
+        const data: ElectrsTx[] = await fetchAddressTxs(address);
         if (cancelled) return;
-        setTxs(data);
+        const known = new Set(data.map((t) => t.txid));
+        const ledgerRows: HistoryRow[] = [];
+        for (const pending of getPendingTxs(address)) {
+          if (known.has(pending.txid)) continue;
+          ledgerRows.push({
+            txid: pending.txid,
+            incoming: pending.change && pending.change.address === address ? pending.change.value : 0,
+            outgoing: pending.spent.reduce((sum, sp) => sum + sp.value, 0),
+            timestamp: Math.floor(pending.createdAt / 1000),
+            confirmed: false,
+          });
+        }
+        const rows: HistoryRow[] = data.map((tx) => {
+          let incoming = 0;
+          let outgoing = 0;
+          for (const vout of tx.vout) {
+            if (vout.scriptpubkey_address === address) incoming += vout.value;
+          }
+          for (const vin of tx.vin) {
+            if (vin.prevout && vin.prevout.scriptpubkey_address === address) outgoing += vin.prevout.value;
+          }
+          return {
+            txid: tx.txid,
+            incoming,
+            outgoing,
+            timestamp: tx.status.block_time ?? 0,
+            confirmed: tx.status.confirmed,
+          };
+        });
+        setTxs([...ledgerRows, ...rows]);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load history');
@@ -75,8 +113,8 @@ export function History({ address }: HistoryProps) {
       ) : (
         <div className="space-y-2">
           {txs.map((tx) => {
-            const isReceived = tx.sent > tx.received;
-            const amount = isReceived ? tx.sent : tx.received - tx.sent;
+            const isReceived = tx.incoming > tx.outgoing;
+            const amount = isReceived ? tx.incoming - tx.outgoing : tx.outgoing - tx.incoming;
 
             return (
               <div key={tx.txid} className="card flex items-center justify-between py-4">
@@ -100,6 +138,9 @@ export function History({ address }: HistoryProps) {
                   <div>
                     <p className="font-medium text-sm">
                       {isReceived ? 'Received' : 'Sent'}
+                      {!tx.confirmed && (
+                        <span className="ml-2 text-xs text-yellow-300">Pending</span>
+                      )}
                     </p>
                     <p className="text-dark-500 text-xs">
                       {formatTime(tx.timestamp)}
@@ -115,7 +156,7 @@ export function History({ address }: HistoryProps) {
                       }`}
                   >
                     {isReceived ? '+' : '-'}
-                    {amount.toFixed(8)}
+                    {(amount / 100000000).toFixed(8)}
                   </p>
                   <p className="text-dark-500 text-xs">NUX</p>
                 </div>
