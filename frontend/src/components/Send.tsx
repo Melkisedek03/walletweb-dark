@@ -3,6 +3,12 @@ import { buildTransaction, fetchUtxos, nuxToNusan, nusanToNux, toUtxo, type UTXO
 import { broadcastTx, fetchOwnMempoolUtxos, type AddressBalance } from '../lib/electrs';
 import { getLockedOutpoints, getPendingTxs, getPendingUtxos, addPendingTx } from '../lib/pending';
 import { COIN } from '../lib/network';
+import {
+  searchAddressBook,
+  getAddressBookLabel,
+  touchAddressBookEntry,
+  isValidNusacoinAddress,
+} from '../lib/addressbook';
 
 interface SendProps {
   address: string;
@@ -13,11 +19,12 @@ interface SendProps {
   balance: AddressBalance | null;
   balanceBech32: AddressBalance | null;
   onDone: () => void;
+  onAddressBook?: () => void;
 }
 
 type SendStep = 'form' | 'confirm' | 'sending' | 'success';
 
-export function Send({ address, bech32address, privateKey, privateKeyBech32, balance, balanceBech32, isBech32, onDone }: SendProps) {
+export function Send({ address, bech32address, privateKey, privateKeyBech32, balance, balanceBech32, isBech32, onDone, onAddressBook }: SendProps) {
   const [step, setStep] = useState<SendStep>('form');
   const [toAddress, setToAddress] = useState('');
   const [amount, setAmount] = useState('');
@@ -28,11 +35,13 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
 
   const activeBalance = isBech32 ? balanceBech32 : balance;
   const maxAmount = activeBalance ? activeBalance.available / COIN : 0;
-  const ADDRESS_RE = /^[NX][1-9A-HJ-NP-Za-km-z]{25,34}$/;
-  const ADDRESS_BECH = /\bnu1[qQ][a-zA-HJ-NP-Z0-9]{25,39}\b/
+  const savedLabel = toAddress ? getAddressBookLabel(toAddress) : null;
+  const addressSuggestions = searchAddressBook(toAddress).filter(
+    (e) => e.address !== toAddress,
+  ).slice(0, 5);
 
   const isValidForm =
-    (ADDRESS_RE.test(toAddress) || ADDRESS_BECH.test(toAddress)) &&
+    isValidNusacoinAddress(toAddress) &&
     (sweep || (parseFloat(amount) > 0 && parseFloat(amount) <= maxAmount));
 
   async function loadSpendableUtxos(): Promise<UTXO[]> {
@@ -207,8 +216,38 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
             onChange={(e) => setToAddress(e.target.value.trim())}
             autoFocus
           />
-          {toAddress && !ADDRESS_RE.test(toAddress) && !ADDRESS_BECH.test(toAddress) && (
+          {toAddress && !isValidNusacoinAddress(toAddress) && (
             <p className="text-red-400 text-sm mt-1">Invalid Nusacoin address</p>
+          )}
+          {savedLabel && (
+            <p className="text-nux-400 text-sm mt-1">Saved as: {savedLabel}</p>
+          )}
+          {addressSuggestions.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {addressSuggestions.map((entry) => (
+                <button
+                  key={entry.address}
+                  type="button"
+                  onClick={() => {
+                    touchAddressBookEntry(entry.address);
+                    setToAddress(entry.address);
+                  }}
+                  className="block w-full text-left px-3 py-2 rounded-lg bg-dark-800 hover:bg-dark-700 text-sm"
+                >
+                  <span className="font-medium">{entry.label}</span>
+                  <span className="block font-mono text-xs break-all text-dark-300">{entry.address}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {onAddressBook && (
+            <button
+              type="button"
+              onClick={onAddressBook}
+              className="text-xs text-nux-400 hover:text-nux-300 mt-2"
+            >
+              Address Book
+            </button>
           )}
         </div>
 
