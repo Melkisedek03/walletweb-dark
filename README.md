@@ -17,7 +17,7 @@ Your keys are generated and stored **only in your browser**, encrypted with your
 - **Create a new wallet** — generates a BIP39 12-word recovery phrase
 - **Import an existing wallet** — restore from your 12-word recovery phrase
 - **Wallet** — Provide Bech32 Address
-- **Legacy** — Provide Legacy Address
+- **Legacy** — Provide Legacy Address (deprecated: new users are directed to bech32; legacy balances should be emptied, and legacy support will be removed in a future version)
 - **Send NUX** — build and sign transactions entirely in the browser
 - **Receive NUX** — display your address with a QR code for easy sharing
 - **Transaction history** — view your recent incoming and outgoing transactions
@@ -31,11 +31,14 @@ After a send is broadcast, the wallet records the transaction locally
 (public data only: txid, spent outpoints, change output, raw hex).
 Change from an unconfirmed transaction can be spent again, and inputs
 already spent by a pending transaction stay locked until the pending
-transaction confirms or disappears from the mempool. Balances are
-shown as confirmed, pending, and available (confirmed spendable plus
-unconfirmed change, minus locked inputs). This matters on chains
-with long block intervals, where change would otherwise look missing
-for hours.
+transaction confirms or disappears from the mempool. In addition,
+unconfirmed outputs belonging to the wallet itself, derived from its
+own mempool transactions, are spendable before confirmation. Balances
+are shown as confirmed, pending, and available (confirmed spendable
+plus own unconfirmed outputs, minus locked inputs). Unconfirmed
+outputs from third parties are not spendable until confirmation.
+This matters on chains with long block intervals, where change would
+otherwise look missing for hours.
 
 ## Security
 
@@ -120,17 +123,32 @@ Esplora-compatible electrs service through the same-origin
 
 ## Self-Hosting
 
+Self-hosting does not change the self-custody model: visitors' keys
+are still generated, encrypted, and used for signing in their own
+browsers. The host server never receives a mnemonic, a private key,
+or a password, and wallet data stays in each visitor's browser
+localStorage, which is scoped per origin. A visitor who moves to a
+self-hosted copy must import the same recovery phrase again; wallet
+data does not move with the static files.
+
 ### Prerequisites
-- A running Nusacoin full node with RPC enabled
-- Docker and Docker Compose
-- Nginx with SSL (recommended)
+- Node.js 20 or newer (tested with Node v24) and npm, for the build only
+- Nginx
+- An Esplora-compatible electrs REST service, either of these:
+  - The public service used by the default config
+    (`https://apinux.taobot.org`), or
+  - A self-run electrs instance. Running electrs itself requires a
+    Nusacoin full node; that setup is outside the scope of this guide.
+- A domain name and Certbot, for HTTPS (Let's Encrypt)
+- Docker and Docker Compose are not required. They are only an
+  optional alternative for serving the static build with nginx.
 
 ### Setup
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/TaobotX11/webwallet-dark.git
-   cd webwallet-dark
+   git clone https://github.com/TaobotX11/walletweb-dark.git
+   cd walletweb-dark
    ```
 
 2. Build the frontend:
@@ -140,19 +158,103 @@ Esplora-compatible electrs service through the same-origin
    npm run build
    cd ..
    ```
+   After install, confirm the dependency pin is honoured:
+   ```bash
+   npm ls @swc/core
+   ```
+   The output must show only `@swc/core@1.12.14` (reported as
+   `overridden` for the top-level entry). If it shows 1.16 or newer,
+   do not proceed to the build; the build fails with
+   `[vite-plugin-top-level-await] missing field 'type'`. Do not run
+   `npm audit fix` to work around it, as that can change the pinned
+   versions.
 
 3. Copy the build output to the nginx document root:
-
    ```bash
-   # Example (adjust the path to the deployment)
    cp -r frontend/dist/* /usr/share/nginx/html/
    ```
+   The build output is a set of static files (`index.html` plus
+   hashed assets under `assets/`). No Vite process and no
+   application server run at runtime.
 
-4. Install `nginx/dompet.nusacoin.org.conf` as the site config and
-   reload nginx. The config serves the static build and proxies
+4. Install the nginx site config. Copy
+   `nginx/dompet.nusacoin.org.conf` to
+   `/etc/nginx/sites-available/` and symlink it into
+   `/etc/nginx/sites-enabled/`, then replace every occurrence of
+   `dompet.nusacoin.org` in that copy with the self-hosted domain.
+   If a block for that domain already exists inside another file
+   (for example, inside the default site file), remove the old block
+   first; two blocks with the same `server_name` conflict.
+   The config serves the static build with SPA routing
+   (`try_files $uri $uri/ /index.html`), serves `index.html`
+   without caching, caches hashed assets for 30 days, and proxies
    `/electrs/` to the electrs service.
+   - To keep using the public electrs service, leave the
+     `/electrs/` block unchanged.
+   - To use a self-run electrs instance on the same machine,
+     change the block to proxy directly to it, for example
+     `proxy_pass http://127.0.0.1:3010/;` (note the trailing
+     slash, which strips the `/electrs/` prefix), and set the
+     `Host` header accordingly. Proxying directly to a local
+     electrs instance avoids an extra round trip through a
+     public proxy.
 
-5. Configure SSL with Let's Encrypt (`certbot --nginx -d dompet.nusacoin.org`).
+5. Configure SSL. The config in the repository has its
+   `ssl_certificate` lines commented out, so do not enable the
+   HTTPS block before a certificate exists. Obtain one first, for
+   example:
+   ```bash
+   certbot --nginx -d <self-hosted domain>
+   ```
+   Certbot fills in the certificate paths and the HTTP-to-HTTPS
+   redirect.
+
+6. Test the config and reload nginx:
+   ```bash
+   nginx -t
+   systemctl reload nginx
+   ```
+   Do not reload if `nginx -t` fails; restore the previous config
+   from backup first.
+
+### Verify the deployment
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" https://<self-hosted domain>/
+curl -s https://<self-hosted domain>/electrs/blocks/tip/height
+```
+
+The first command must return `200`, not `502`. The second must
+return a block height number, not an HTML error page. If the first
+returns `502`, the site block is still proxying to a dead process
+(for example, a Vite dev server or an old backend) instead of
+serving the static build. If the second returns `502` while the
+public electrs service works, the `/electrs/` proxy target is
+unreachable from the host; when electrs runs on the same machine,
+point the proxy at the local electrs port as described in step 4.
+
+### Troubleshooting
+
+- `git pull` refuses with "local changes would be overwritten" for
+  `frontend/package.json`: that file was changed locally by a
+  previous install or fix. If the upstream change already contains
+  the same fix, discarding only that file is safe:
+  ```bash
+  git checkout -- frontend/package.json
+  git pull
+  ```
+  Do not discard other locally changed files without checking what
+  they are (`git status --short`).
+- A fresh build fails with `[vite-plugin-top-level-await] missing
+  field 'type'`: the installed `@swc/core` version is too new.
+  The repository pins it exactly to `1.12.14` with an `overrides`
+  entry; re-run `npm install` and re-check `npm ls @swc/core`
+  before rebuilding.
+- The wallet shows a balance but a send fails with insufficient
+  funds: check the separate Confirmed, Pending, and Available
+  figures. Available counts confirmed spendable outputs plus own
+  unconfirmed outputs, minus inputs locked by pending sends.
+  Third-party incoming outputs do not count until confirmation.
 
 ## License
 
