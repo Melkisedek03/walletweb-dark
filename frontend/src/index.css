@@ -2,10 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Plus Jakarta Sans, self-hosted as a single variable font (weight
+   axis 200-800). No webfont is ever fetched from a CDN: the wallet
+   makes no external requests. The font ships under the SIL Open Font
+   License 1.1; see assets/fonts/OFL.txt. It supports tabular figures
+   (tnum), used by the .num utility below for amounts. */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  src: url('./assets/fonts/plus-jakarta-sans-variable.woff2') format('woff2');
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
 @layer base {
   body {
     @apply bg-dark-950 text-gray-100 antialiased;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
 }
 
