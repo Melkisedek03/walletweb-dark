@@ -55,3 +55,23 @@ async function boot() {
 }
 
 boot();
+
+// PWA: register the service worker in production builds only, so the
+// wallet is installable and its app shell opens while offline. The
+// worker never caches electrs data (see sw-template.js). When a new
+// worker takes control, reload once so the running page is the build
+// the new worker cached.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.error('Service worker registration failed:', err);
+    });
+  });
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!refreshing) {
+      refreshing = true;
+      window.location.reload();
+    }
+  });
+}

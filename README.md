@@ -23,6 +23,7 @@ Your keys are generated and stored **only in your browser**, encrypted with your
 - **Transaction history** — view your recent incoming and outgoing transactions
 - **Address Book** — save labelled recipient addresses in this browser, and pick them from the send form; entries are never sent to a server
 - **Incoming notice** — while the wallet tab is open, a banner appears when the total balance increases during a refresh; this is not a background push notification
+- **Installable (PWA)** — the wallet can be installed on a phone or desktop home screen and its app shell opens while offline; balance, UTXO, and broadcast data are never cached, so sending still needs a connection
 - **Real-time balance** — fetched directly from the Nusacoin blockchain
 - **Copy recovery phrase** — one-click copy for safe backup
 - **Modern dark UI** — clean, responsive design inspired by MetaMask and Phantom
@@ -41,6 +42,27 @@ plus own unconfirmed outputs, minus locked inputs). Unconfirmed
 outputs from third parties are not spendable until confirmation.
 This matters on chains with long block intervals, where change would
 otherwise look missing for hours.
+
+## Progressive Web App
+
+The wallet is installable: on Android/Chrome it can be added to the
+home screen from the browser menu, on iOS via Share → Add to Home
+Screen. The installed app shares the same origin (and therefore the
+same encrypted wallet, address book, and pending ledger) as the
+browser tab, so nothing needs to be imported again.
+
+A hand-written service worker (`sw-template.js`, generated into
+`sw.js` at build time with that build's hashed asset list) caches
+only the app shell, so the installed app opens while offline.
+Requests to `/electrs/` and all non-GET requests are never cached:
+balance, UTXO, and broadcast data always come from the network.
+The service worker and the manifest must be served without caching
+(see `nginx/dompet.nusacoin.org.conf`), or updates would never
+reach installed users.
+
+The PWA icons are derived from the high-resolution wallet logo
+(1024px source). Replacing the files in `frontend/public/icons/` is
+enough to change them.
 
 ## Security
 
