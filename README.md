@@ -60,10 +60,9 @@ The service worker and the manifest must be served without caching
 (see `nginx/dompet.nusacoin.org.conf`), or updates would never
 reach installed users.
 
-The PWA icons are derived from the existing wallet logo. The 512px
-icons are upscaled from the 200px source until a dedicated
-high-resolution icon exists; replacing the files in
-`frontend/public/icons/` is enough to change them.
+The PWA icons are derived from the high-resolution wallet logo
+(1024px source). Replacing the files in `frontend/public/icons/` is
+enough to change them.
 
 ## Security
 
