@@ -2,6 +2,12 @@ import { Buffer } from 'buffer';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
+import { applyTheme, getStoredTheme } from './lib/theme';
+
+// Apply the stored theme before the first render, so the page never
+// flashes the wrong theme. (index.html also applies it inline, even
+// earlier, before the first paint.)
+applyTheme(getStoredTheme());
 
 // Polyfill Buffer for bitcoinjs-lib
 (globalThis as Record<string, unknown>).Buffer = Buffer;

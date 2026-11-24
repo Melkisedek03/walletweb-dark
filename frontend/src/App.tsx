@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Layout } from './components/Layout';
 import logoImg from './assets/logo.png';
 import { CreateWallet } from './components/CreateWallet';
@@ -11,9 +12,19 @@ import { Receive } from './components/Receive';
 import { History } from './components/History';
 import { AddressBook } from './components/AddressBook';
 import { useWallet, type WalletView } from './hooks/useWallet';
+import { applyTheme, getStoredTheme, type Theme } from './lib/theme';
 
 function App() {
   const wallet = useWallet();
+
+  // Visual theme only; the toggle lives in the header and works on
+  // every screen, including unlock (before any wallet is loaded).
+  const [theme, setTheme] = useState<Theme>(() => getStoredTheme());
+  const toggleTheme = () => {
+    const next: Theme = theme === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    setTheme(next);
+  };
 
   const isLoggedIn = !!wallet.privateKeyBech32 && !!wallet.privateKey && !!wallet.walletData;
   const navViews = ['dashboard', 'legacy', 'send', 'receive', 'history', 'addressbook'];
@@ -180,6 +191,8 @@ function App() {
       showNav={isLoggedIn && navViews.includes(wallet.view)}
       activeView={wallet.view}
       onNavigate={(v) => wallet.setView(v as WalletView)}
+      theme={theme}
+      onToggleTheme={toggleTheme}
     >
       {renderContent()}
     </Layout>
