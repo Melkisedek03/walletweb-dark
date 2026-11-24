@@ -26,7 +26,8 @@ Your keys are generated and stored **only in your browser**, encrypted with your
 - **Installable (PWA)** — the wallet can be installed on a phone or desktop home screen and its app shell opens while offline; balance, UTXO, and broadcast data are never cached, so sending still needs a connection
 - **Real-time balance** — fetched directly from the Nusacoin blockchain
 - **Copy recovery phrase** — one-click copy for safe backup
-- **Modern dark UI** — clean, responsive design inspired by MetaMask and Phantom
+- **Dark and light themes** — switch from the header on any screen; the choice is stored in this browser and dark is the default
+- **Modern UI** — clean, responsive design inspired by MetaMask and Phantom, with a bottom navigation bar on every screen
 
 ## Pending transactions
 
@@ -63,6 +64,17 @@ reach installed users.
 The PWA icons are derived from the high-resolution wallet logo
 (1024px source). Replacing the files in `frontend/public/icons/` is
 enough to change them.
+
+## Appearance
+
+The interface has two themes, dark (default) and light, switched
+from the header button on any screen, including unlock. The choice
+is stored in localStorage (`nux_theme`) and applied as a
+`data-theme` attribute on `<html>` before the first paint, so the
+page never flashes the wrong theme. All colors are CSS variables
+(see `frontend/src/index.css` and `frontend/tailwind.config.js`),
+so both themes share one set of component classes. Amounts use
+tabular figures, so a balance does not jitter when it refreshes.
 
 ## Security
 
@@ -104,7 +116,10 @@ Esplora-compatible electrs service through the same-origin
 
 ### Frontend
 - React + TypeScript + Vite
-- Tailwind CSS (dark mode)
+- Tailwind CSS (dark and light themes)
+- Plus Jakarta Sans, self-hosted as a single variable font
+  (`frontend/src/assets/fonts/`, SIL Open Font License 1.1); no
+  webfont is ever fetched from a CDN
 - bitcoinjs-lib (transaction building & signing)
 - bip39 / bip32 (key generation & derivation)
 - Web Crypto API + AES-256-GCM (wallet encryption)

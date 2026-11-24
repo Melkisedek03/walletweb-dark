@@ -29,30 +29,26 @@ export function Legacy({ address, balance, onRefreshTwo, onSend, onHistory }: Le
                     <p className="text-green-300 text-sm">
                         Incoming coins: +{nusanToNux(noticeNusan)} NUX
                     </p>
-                    <button onClick={dismissNotice} className="text-green-300 text-sm hover:text-white shrink-0">
+                    <button onClick={dismissNotice} className="text-green-300 text-sm hover:text-ink shrink-0">
                         Dismiss
                     </button>
                 </div>
             )}
-            {/* Balance Card */}
-            <div className="card text-center py-10">
-                <p className="text-dark-400 text-sm mb-2">Total Balance</p>
-                <h2 className="text-4xl font-bold tracking-tight">
+            {/* Balance hero (warm legacy variant) */}
+            <div className="hero-balance hero-balance-legacy">
+                <p className="hero-label">Total Balance</p>
+                <h2 className="hero-value">
                     {balancenux}
-                    <span className="text-lg text-dark-400 ml-2">NUX</span>
+                    <span className="hero-unit">NUX</span>
                 </h2>
                 {balance && (
-                    <>
-                        <p className="text-sm mt-2 text-dark-300">
-                            Confirmed: {confirmedNux} NUX
-                        </p>
-                        <p className="text-sm mt-1 text-dark-300">
-                            Pending: {pendingNux} NUX
-                        </p>
-                    </>
+                    <div className="hero-pills">
+                        <div className="hero-pill">Confirmed<b>{confirmedNux} NUX</b></div>
+                        <div className="hero-pill">Pending<b>{pendingNux} NUX</b></div>
+                    </div>
                 )}
                 {balance && balance.received > 0 && (
-                    <p className="text-2xl text-sm mt-2">
+                    <p className="hero-note">
                         Total received: {nusanToNux(balance.received)} NUX
                     </p>
                 )}
@@ -60,7 +56,7 @@ export function Legacy({ address, balance, onRefreshTwo, onSend, onHistory }: Le
 
             {/* Quick Actions */}
             <div className="grid grid-cols-1 gap-4">
-                <button onClick={onSend} className="btn-legacy text-center py-4">
+                <button onClick={onSend} className="btn-legacy text-center py-4 rounded-full">
                     SWEEP
                 </button>
             </div>
