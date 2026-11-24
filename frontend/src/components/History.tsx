@@ -146,7 +146,7 @@ export function History({ address }: HistoryProps) {
                       {formatTime(tx.timestamp)}
                     </p>
                     <p className="text-dark-400 text-xs">
-                      <a href={`https://book.taobot.org/tx/${tx.txid}`} target="_blank">{tx.txid.slice(8, 28)}...</a>
+                      <a href={`https://book.taobot.org/tx/${tx.txid}`} target="_blank" className="text-inherit hover:text-nux-400 transition-colors">{tx.txid.slice(8, 28)}...</a>
                     </p>
                   </div>
                 </div>

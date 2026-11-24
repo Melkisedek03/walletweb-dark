@@ -21,7 +21,7 @@ export function BackupMnemonic({ mnemonic, onConfirm }: BackupMnemonicProps) {
       <div>
         <h1 className="text-2xl font-bold">Backup Your Wallet</h1>
         <p className="text-dark-400 mt-2">
-          Write down these 12 words in order. This is the <strong className="text-white">only way</strong> to
+          Write down these 12 words in order. This is the <strong className="text-ink">only way</strong> to
           recover your wallet if you lose access to this browser.
         </p>
       </div>

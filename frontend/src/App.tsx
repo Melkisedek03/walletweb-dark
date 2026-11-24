@@ -47,7 +47,7 @@ function App() {
               <ul className="text-xs text-dark-300 space-y-2">
                 <li className="flex items-start gap-2">
                   <span className="text-green-400 mt-0.5">&#10003;</span>
-                  <span>Your private keys are encrypted and stored <strong className="text-white">only in your browser</strong>. Our server never has access to your keys or funds.</span>
+                  <span>Your private keys are encrypted and stored <strong className="text-ink">only in your browser</strong>. Our server never has access to your keys or funds.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-green-400 mt-0.5">&#10003;</span>

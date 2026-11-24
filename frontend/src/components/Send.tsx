@@ -162,7 +162,7 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
           </div>
           <div>
             <p className="text-dark-400 text-xs">Amount</p>
-            <p className="text-xl font-bold">{sweep ? 'All available (sweep)' : `${amount} NUX`}</p>
+            <p className="text-xl font-bold num">{sweep ? 'All available (sweep)' : `${amount} NUX`}</p>
           </div>
         </div>
 
