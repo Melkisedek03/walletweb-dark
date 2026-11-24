@@ -15,6 +15,108 @@
   font-display: swap;
 }
 
+/* Theme tokens. Every neutral and status color the components use is
+   a CSS variable holding an RGB triplet (see tailwind.config.js), so
+   one set of classes renders both themes. :root holds the dark
+   (default) values; [data-theme="light"] overrides them. The dark
+   values are the previous hardcoded palette, so dark mode renders
+   exactly as before. */
+:root {
+  color-scheme: dark;
+  --dark-50: 248 252 248;
+  --dark-100: 241 249 242;
+  --dark-200: 226 240 226;
+  --dark-300: 203 225 203;
+  --dark-400: 148 184 151;
+  --dark-500: 100 139 100;
+  --dark-600: 71 105 74;
+  --dark-700: 51 85 51;
+  --dark-800: 30 59 30;
+  --dark-900: 15 42 16;
+  --dark-950: 2 23 2;
+  --ink: 243 244 246;
+  --nux-300: 136 252 125;
+  --nux-400: 56 248 56;
+  --green-300: 134 239 172;
+  --green-400: 74 222 128;
+  --red-300: 252 165 165;
+  --red-400: 248 113 113;
+  --yellow-200: 254 240 138;
+  --yellow-300: 253 224 71;
+  --yellow-400: 250 204 21;
+  --orange-300: 253 186 116;
+  --orange-400: 251 146 60;
+  /* Primary button: light mint with dark text on dark mode, deep
+     green with white text on light mode. */
+  --btn-primary-bg: #e4fbe1;
+  --btn-primary-bg-hover: #f2fff0;
+  --btn-primary-text: #062b12;
+  /* Balance hero: emerald gradient on dark mode, clean white card
+     on light mode. */
+  --hero-bg: linear-gradient(150deg, #0f6e0c 0%, #03a103 55%, #0ee90e 130%);
+  --hero-border: 1px solid rgba(255, 255, 255, 0.1);
+  --hero-text: #ffffff;
+  --hero-muted: rgba(255, 255, 255, 0.78);
+  --hero-shadow: 0 18px 40px rgba(3, 161, 3, 0.35);
+  --hero-pill-bg: rgba(0, 0, 0, 0.22);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --dark-50: 246 248 247;
+  --dark-100: 231 239 233;
+  --dark-200: 30 59 30;
+  --dark-300: 51 85 51;
+  --dark-400: 92 122 96;
+  --dark-500: 107 138 110;
+  --dark-600: 200 220 203;
+  --dark-700: 224 235 225;
+  --dark-800: 237 244 238;
+  --dark-900: 255 255 255;
+  --dark-950: 246 248 247;
+  --ink: 18 38 26;
+  --nux-300: 3 161 3;
+  --nux-400: 11 133 7;
+  --green-300: 21 128 61;
+  --green-400: 22 163 74;
+  --red-300: 185 28 28;
+  --red-400: 220 38 38;
+  --yellow-200: 133 77 14;
+  --yellow-300: 161 98 7;
+  --yellow-400: 202 138 4;
+  --orange-300: 194 65 12;
+  --orange-400: 234 88 12;
+  --btn-primary-bg: #0f6e0c;
+  --btn-primary-bg-hover: #0b8507;
+  --btn-primary-text: #ffffff;
+  --hero-bg: #ffffff;
+  --hero-border: 1px solid #e2ece4;
+  --hero-text: #12261a;
+  --hero-muted: #5c7a60;
+  --hero-shadow: 0 10px 30px rgba(15, 110, 12, 0.08);
+  --hero-pill-bg: #f0f7f1;
+}
+
+/* Legacy hero: warm amber tones instead of emerald, so the
+   deprecated area stays visually distinct in both themes. */
+.hero-balance-legacy {
+  --hero-bg: linear-gradient(150deg, #431407 0%, #7c2d12 60%, #9a3412 130%);
+  --hero-border: 1px solid rgba(255, 255, 255, 0.1);
+  --hero-text: #ffffff;
+  --hero-muted: rgba(255, 255, 255, 0.78);
+  --hero-shadow: 0 18px 40px rgba(194, 65, 12, 0.35);
+  --hero-pill-bg: rgba(0, 0, 0, 0.22);
+}
+
+[data-theme="light"] .hero-balance-legacy {
+  --hero-bg: #fff7ed;
+  --hero-border: 1px solid #fed7aa;
+  --hero-text: #431407;
+  --hero-muted: #9a3412;
+  --hero-shadow: 0 10px 30px rgba(194, 65, 12, 0.1);
+  --hero-pill-bg: #ffedd5;
+}
+
 @layer base {
   body {
     @apply bg-dark-950 text-gray-100 antialiased;
@@ -24,7 +126,13 @@
 
 @layer components {
   .btn-primary {
-    @apply bg-nux-500 hover:bg-nux-600 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply font-semibold py-3 px-6 rounded-xl transition-all duration-200 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
+    background-color: var(--btn-primary-bg);
+    color: var(--btn-primary-text);
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--btn-primary-bg-hover);
   }
 
   .btn-legacy {
@@ -40,10 +148,69 @@
   }
 
   .card {
-    @apply bg-dark-900 border border-dark-700 rounded-2xl p-6;
+    @apply bg-dark-900 border border-dark-700 rounded-3xl p-6;
   }
 
   .input-field {
-    @apply w-full bg-dark-800 border border-dark-600 rounded-xl px-4 py-3 text-white placeholder-dark-400 focus:outline-none focus:border-nux-500 focus:ring-1 focus:ring-nux-500 transition-colors;
+    @apply w-full bg-dark-800 border border-dark-600 rounded-xl px-4 py-3 text-ink placeholder-dark-400 focus:outline-none focus:border-nux-500 focus:ring-1 focus:ring-nux-500 transition-colors;
+  }
+
+  /* Tabular figures for amounts: digits keep a fixed width, so a
+     balance does not jitter when it refreshes. */
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  /* Balance hero (Emerald Glow). The gradient, text, and pill
+     colors come from the --hero-* tokens, so the same markup
+     renders the emerald gradient on dark mode and the clean white
+     card on light mode. */
+  .hero-balance {
+    @apply rounded-3xl p-6 text-center;
+    background: var(--hero-bg);
+    border: var(--hero-border);
+    color: var(--hero-text);
+    box-shadow: var(--hero-shadow);
+  }
+
+  .hero-label {
+    @apply text-xs font-semibold mb-2;
+    color: var(--hero-muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .hero-value {
+    @apply text-4xl font-bold tracking-tight;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  .hero-unit {
+    @apply text-lg ml-2;
+    color: var(--hero-muted);
+  }
+
+  .hero-pills {
+    @apply flex gap-2 mt-4;
+  }
+
+  .hero-pill {
+    @apply flex-1 rounded-xl px-3 py-2.5 text-left text-xs;
+    background: var(--hero-pill-bg);
+    color: var(--hero-muted);
+  }
+
+  .hero-pill b {
+    @apply block text-sm mt-0.5;
+    color: var(--hero-text);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  .hero-note {
+    @apply text-sm mt-3;
+    color: var(--hero-muted);
   }
 }
