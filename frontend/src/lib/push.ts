@@ -108,6 +108,34 @@ function subscriptionPayload(subscription: PushSubscription, addresses: string[]
 
 export type PushSubscribeResult = { ok: boolean; error?: string };
 
+/**
+ * Create a fresh push subscription, retrying once after a short delay.
+ *
+ * A subscribe issued immediately after an unsubscribe can be rejected
+ * transiently while the browser push stack still releases the old
+ * subscription (observed on Android when the Notifications toggle is
+ * switched off and back on in quick succession: the first subscribe
+ * throws and the user sees a generic error, while a later attempt
+ * succeeds). One delayed retry absorbs that rejection; if the retry
+ * also throws, the error propagates to the caller as before.
+ */
+async function subscribeWithRetry(
+  pushManager: PushManager,
+): Promise<PushSubscription> {
+  const options: PushSubscriptionOptionsInit = {
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+  };
+  try {
+    return await pushManager.subscribe(options);
+  } catch {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 2000);
+    });
+    return pushManager.subscribe(options);
+  }
+}
+
 /** Turn notifications on: request permission, subscribe, register. */
 export async function subscribePush(addresses: string[]): Promise<PushSubscribeResult> {
   if (Notification.permission === 'denied') {
@@ -126,10 +154,7 @@ export async function subscribePush(addresses: string[]): Promise<PushSubscribeR
     const registration = await navigator.serviceWorker.ready;
     let subscription = await registration.pushManager.getSubscription();
     if (!subscription) {
-      subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-      });
+      subscription = await subscribeWithRetry(registration.pushManager);
     }
     const saved = await postSubscription(
       '/subscribe',
