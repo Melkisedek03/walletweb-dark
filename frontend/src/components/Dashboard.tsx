@@ -2,6 +2,13 @@ import { useEffect, useState } from 'react';
 import { nusanToNux } from '../lib/transaction';
 import { COIN } from '../lib/network';
 import { fetchNuxIdrRate, formatIdr } from '../lib/rate';
+import {
+  isPushSupported,
+  getStoredPushEndpoint,
+  subscribePush,
+  unsubscribePush,
+  syncPushSubscription,
+} from '../lib/push';
 import type { AddressBalance } from '../lib/electrs';
 import { useIncomingNotice } from '../hooks/useIncomingNotice';
 
@@ -17,11 +24,60 @@ interface DashboardProps {
   onAddressBook: () => void;
 }
 
-export function Dashboard({ bech32address, balance, onInit, onRefresh, onSend, onReceive, onAddressBook }: DashboardProps) {
+export function Dashboard({ address, bech32address, balance, onInit, onRefresh, onSend, onReceive, onAddressBook }: DashboardProps) {
   // Fiat rate (NUX/IDR). Null until a price is fetched; the fiat
   // line simply stays hidden while it is null, so a missing rate
   // never blocks anything.
   const [rate, setRate] = useState<number | null>(null);
+
+  // Push notifications (opt-in). The section renders only when the
+  // browser supports push; in an unsupported browser (e.g. a Safari
+  // tab) it stays hidden entirely, with no error state.
+  const [pushSupported] = useState(() => isPushSupported());
+  const [pushOn, setPushOn] = useState(() => getStoredPushEndpoint() !== null);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushDenied, setPushDenied] = useState(false);
+  const [pushError, setPushError] = useState<string | null>(null);
+
+  // Re-sync after a browser subscription rotation, and correct the
+  // toggle if the browser dropped the subscription.
+  useEffect(() => {
+    if (!pushSupported) return;
+    let cancelled = false;
+    void (async () => {
+      await syncPushSubscription([bech32address, address]);
+      if (!cancelled) setPushOn(getStoredPushEndpoint() !== null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pushSupported, bech32address, address]);
+
+  const togglePush = async () => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    setPushError(null);
+    setPushDenied(false);
+    try {
+      if (pushOn) {
+        await unsubscribePush();
+        setPushOn(false);
+      } else {
+        const result = await subscribePush([bech32address, address]);
+        if (result.ok) {
+          setPushOn(true);
+        } else if (result.error === 'denied') {
+          setPushDenied(true);
+        } else if (result.error === 'server') {
+          setPushError('Could not reach the notification server. Check the connection and try again.');
+        } else {
+          setPushError('Could not turn on notifications. Try again.');
+        }
+      }
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   useEffect(() => {
     const loadRate = () => {
@@ -82,6 +138,52 @@ export function Dashboard({ bech32address, balance, onInit, onRefresh, onSend, o
           </p>
         )}
       </div>
+
+      {/* Notifications (opt-in push). Rendered only when the browser
+          supports push; hidden entirely otherwise. Turning it on
+          stores this wallet's addresses next to a push endpoint on
+          the notification server, so it can alert this browser when
+          coins arrive. Turning it off deletes that stored
+          subscription. */}
+      {pushSupported && (
+        <div className="card">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold">Notifications</p>
+              <p className="text-dark-400 text-xs mt-1">
+                Get notified when coins arrive, even with the browser closed.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={pushOn}
+              aria-label="Push notifications"
+              onClick={togglePush}
+              disabled={pushBusy}
+              className={`relative shrink-0 w-12 h-7 rounded-full transition-colors disabled:opacity-50 ${pushOn ? 'bg-nux-500' : 'bg-dark-600'}`}
+            >
+              <span
+                aria-hidden="true"
+                className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${pushOn ? 'translate-x-5' : 'translate-x-0'}`}
+              />
+            </button>
+          </div>
+          <p className="text-dark-400 text-xs mt-3">
+            {pushOn
+              ? 'On: your wallet addresses are stored next to a push endpoint on the notification server. Turn it off any time to delete them.'
+              : 'Off: nothing is stored anywhere. Turning it on stores your wallet addresses next to a push endpoint on the notification server.'}
+          </p>
+          {pushDenied && (
+            <p className="text-yellow-300 text-xs mt-2">
+              Notifications are blocked for this site. Re-enable them in your browser settings to turn them on.
+            </p>
+          )}
+          {pushError && (
+            <p className="text-red-400 text-xs mt-2">{pushError}</p>
+          )}
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div className="grid grid-cols-2 gap-4">

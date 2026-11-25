@@ -62,7 +62,7 @@ function App() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-green-400 mt-0.5">&#10003;</span>
-                  <span>No registration, no accounts, no personal data collected.</span>
+                  <span>No registration, no accounts, no personal data collected — push notifications are off by default and opt-in only.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-yellow-400 mt-0.5">&#9888;</span>
