@@ -518,7 +518,17 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
           </label>
           <div className="relative">
             <input
-              type="number"
+              // Text input, not number: with type="number" Chrome
+              // reports invalid input (e.g. "--9794664" typed from a
+              // mobile keyboard, which bypasses key down) as an empty
+              // value, so React never rewrites the field and the
+              // invalid text stays visible. With type="text" the
+              // typed text reaches sanitizeAmount and the display
+              // updates. inputMode="decimal" keeps the numeric
+              // keyboard on mobile. Validation stays with
+              // isValidForm (amount > 0 and <= available).
+              type="text"
+              inputMode="decimal"
               className="input-field pr-16"
               placeholder="0.00"
               value={sweep ? maxAmount.toFixed(8) : amount}
@@ -533,9 +543,6 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
                 const pasted = sanitizeAmount(e.clipboardData.getData('text'));
                 if (pasted) setAmount(pasted);
               }}
-              step="0.00000001"
-              min="0.00000001"
-              max={maxAmount}
             />
             <button
               type="button"
