@@ -50,7 +50,11 @@ The wallet is installable: on Android/Chrome it can be added to the
 home screen from the browser menu, on iOS via Share → Add to Home
 Screen. The installed app shares the same origin (and therefore the
 same encrypted wallet, address book, and pending ledger) as the
-browser tab, so nothing needs to be imported again.
+browser tab, so nothing needs to be imported again. Chrome no
+longer shows an automatic install banner, so the app shows its own:
+a dismissible banner appears (Android/desktop Chrome only) when
+the browser reports the site as installable, and dismissing it
+hides it permanently.
 
 A hand-written service worker (`sw-template.js`, generated into
 `sw.js` at build time with that build's hashed asset list) caches
