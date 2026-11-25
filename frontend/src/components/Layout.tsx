@@ -1,5 +1,6 @@
 import React from 'react';
 import logo from '../assets/logo.png';
+import { InstallPrompt } from './InstallPrompt';
 import type { Theme } from '../lib/theme';
 
 interface LayoutProps {
@@ -139,7 +140,13 @@ export function Layout({
       )}
 
       {/* Content */}
-      <main className="max-w-2xl mx-auto px-4 pt-8 pb-28">{children}</main>
+      <main className="max-w-2xl mx-auto px-4 pt-8 pb-28">
+        {/* Install banner, rendered on every screen (landing, unlock,
+            dashboard) so first-time visitors see it too. It renders
+            nothing unless the browser reported the site installable. */}
+        <InstallPrompt />
+        {children}
+      </main>
     </div>
   );
 }
