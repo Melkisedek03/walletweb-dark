@@ -35,21 +35,29 @@ The frontend toggle subscribes against this backend, so the backend
 must be live before the frontend PR merges. Deploy order is part of
 the change; do not merge the frontend first.
 
-### 0. Confirm the port picture first
+### 0. Port picture (verified 2026-11-25)
 
-Ports 8081, 8082, and 8083 are confirmed in use on this VPS
-(verified 2026-11-25), so 8085 stays the proposed port: it avoids
-all three. The PUNDI mapping copy defaults to `BIND_PORT 8081`
-while live nginx routes `/api/fcm_mapping` to :8083 — check which
-service actually binds each of those ports before starting the new
-one, so it cannot collide with them. Run a full listing first:
+Full `ss -tlnp` snapshot from this VPS, recorded here so the deploy
+does not have to guess. Port **8085 is free** — it is the port this
+service binds.
 
-```bash
-ss -tlnp
-```
+| Port | Process | Notes |
+| --- | --- | --- |
+| 8081 | `lnd` (pid 2702249) | LND REST |
+| 8082 | `lnd` (pid 1396717) | LND REST, second instance |
+| 8083 | `python3` (pid 3245348) | PUNDI mapping service; matches live nginx `/api/fcm_mapping` → `:8083` |
+| 8084 | `MainThread` / Node (pid 1435279) | Rental backend; matches live nginx `/api/rental/` → `:8084` |
+| 50009 | `electrs` (pid 3356238) | Mainnet electrs (Electrum protocol) — what the watcher subscribes to, same as the PUNDI watcher |
 
-If 8085 is taken after all, pick another free port and change
-`BIND_PORT` in `webwallet-push.service` and the `MAPPING_URL` /
+This resolves the old 8081-vs-8083 question: the PUNDI mapping
+copy's default `BIND_PORT 8081` would collide with LND; the deployed
+mapping service is on 8083. This VPS also runs the mainnet electrs
+REST on 3010 and testnet electrs (REST 3011, Electrum 60009); the web
+wallet's own electrs lives on the dompet host VPS, not here.
+
+Re-check the listing at deploy time (`ss -tlnp`) — ports can
+change. If 8085 is taken after all, pick another free port and
+change `BIND_PORT` in `webwallet-push.service` and the `MAPPING_URL` /
 `DELETE_URL` in `webwallet-watcher.service` (and the nginx location
 below) to match.
 
