@@ -23,6 +23,7 @@ Your keys are generated and stored **only in your browser**, encrypted with your
 - **Transaction history** — view your recent incoming and outgoing transactions
 - **Address Book** — save labelled recipient addresses in this browser, and pick them from the send form; entries are never sent to a server
 - **Incoming notice** — while the wallet tab is open, a banner appears when the total balance increases during a refresh; this is not a background push notification
+- **Push notifications (opt-in)** — turn on Notifications on the Wallet screen to be alerted when coins arrive, even with the browser closed; off by default, and turning it on stores the wallet's addresses next to a push endpoint on the notification server (deletable any time from the same toggle or by logging out); iPhone needs the installed PWA (iOS 16.4+)
 - **Installable (PWA)** — the wallet can be installed on a phone or desktop home screen and its app shell opens while offline; balance, UTXO, and broadcast data are never cached, so sending still needs a connection
 - **Real-time balance** — fetched directly from the Nusacoin blockchain
 - **Copy recovery phrase** — one-click copy for safe backup
@@ -86,6 +87,7 @@ tabular figures, so a balance does not jitter when it refreshes.
 - **AES-256-GCM encryption** — wallet data encrypted with your password (PBKDF2, 600,000 iterations)
 - **BIP39 / BIP44 / BIP84 standard** — 12-word mnemonic, HD key derivation (`m/84'/662'/0'/0/0`)
 - **No server-side accounts** — nothing to hack on the server
+- **Push notifications are opt-in** — off by default; turning them on stores the wallet's addresses next to a push endpoint on the notification server, so it can alert this browser about incoming coins. Turn the toggle off or log out to delete the stored subscription. Keys never leave the browser either way.
 - **No tracking, no analytics** — your privacy is respected
 - **Rate-limited API** — protection against abuse
 - **HTTPS only** — all traffic encrypted in transit

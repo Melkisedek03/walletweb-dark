@@ -54,3 +54,45 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
   event.respondWith(caches.match(request).then((cached) => cached || fetch(request)));
 });
+
+// Push notifications (Web Push via FCM, opt-in only). The watcher
+// sends a notification payload (title/body) plus data (txid, amount,
+// address). A malformed payload shows nothing: a broken notification
+// is worse than none.
+self.addEventListener('push', (event) => {
+  let payload = null;
+  try {
+    payload = event.data ? event.data.json() : null;
+  } catch {
+    payload = null;
+  }
+  const notification = payload && payload.notification;
+  if (!notification || typeof notification.title !== 'string') return;
+  const data = (payload && payload.data) || {};
+  const txid = typeof data.txid === 'string' ? data.txid : '';
+  event.waitUntil(
+    self.registration.showNotification(notification.title, {
+      body: typeof notification.body === 'string' ? notification.body : '',
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      // The tag collapses repeat notifications for one transaction.
+      tag: txid ? `nux-incoming-${txid}` : 'nux-incoming',
+      data: { txid, url: '/' },
+    }),
+  );
+});
+
+// Tapping a notification focuses the open wallet tab, or opens the
+// wallet when no tab is open. It never lands on a dead tab.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ('focus' in client) return client.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow('/');
+      return undefined;
+    }),
+  );
+});

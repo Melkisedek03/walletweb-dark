@@ -10,6 +10,7 @@ import {
 } from '../lib/wallet';
 import { fetchBalance, fetchUtxos, fetchTxStatus, fetchOwnMempoolUtxos, type AddressBalance } from '../lib/electrs';
 import { getPendingTxs, removePendingTx, getLockedOutpoints, getPendingUtxos } from '../lib/pending';
+import { deletePushSubscription } from '../lib/push';
 
 export type WalletView =
   | 'landing'
@@ -144,6 +145,9 @@ export function useWallet() {
   }, []);
 
   const handleLogout = useCallback(() => {
+    // The wallet leaves this browser, so the push subscription must
+    // go with it. Fire-and-forget: it must never block logout.
+    deletePushSubscription();
     deleteWallet();
     setState({
       view: 'landing',

@@ -37,22 +37,21 @@ the change; do not merge the frontend first.
 
 ### 0. Confirm the port picture first
 
-The proposed port 8085 was chosen because the live nginx routes the
-PUNDI mapping service to :8083 and the rental backend to :8084, but
-the `ss` output used for that check did not show 8083/8084 either,
-so the port picture is incomplete. Before starting anything, run a
-full listing and confirm 8085 is free — and resolve the discrepancy
-that the PUNDI mapping copy defaults to `BIND_PORT 8081` while live
-nginx routes `/api/fcm_mapping` to :8083, so the new service cannot
-collide with it:
+Ports 8081, 8082, and 8083 are confirmed in use on this VPS
+(verified 2026-11-25), so 8085 stays the proposed port: it avoids
+all three. The PUNDI mapping copy defaults to `BIND_PORT 8081`
+while live nginx routes `/api/fcm_mapping` to :8083 — check which
+service actually binds each of those ports before starting the new
+one, so it cannot collide with them. Run a full listing first:
 
 ```bash
 ss -tlnp
 ```
 
-If 8085 is taken, pick another free port and change `BIND_PORT` in
-`webwallet-push.service` and the `MAPPING_URL` / `DELETE_URL` in
-`webwallet-watcher.service` (and the nginx location below) to match.
+If 8085 is taken after all, pick another free port and change
+`BIND_PORT` in `webwallet-push.service` and the `MAPPING_URL` /
+`DELETE_URL` in `webwallet-watcher.service` (and the nginx location
+below) to match.
 
 ### 1. Copy the files
 
