@@ -34,6 +34,17 @@ export function Legacy({ address, balance, onRefreshTwo, onSend, onHistory }: Le
                     </button>
                 </div>
             )}
+            {/* Deprecation notice: legacy support will be removed in a
+                future release; balances should move to bech32 first. */}
+            <div className="card bg-orange-500/10 border border-orange-500/30">
+                <p className="text-orange-400 text-sm font-medium">
+                    The Legacy wallet is deprecated and will be removed in a future release.
+                </p>
+                <p className="text-dark-300 text-sm mt-1">
+                    Move the balance to the bech32 wallet to keep using it.
+                </p>
+            </div>
+
             {/* Balance hero (warm legacy variant) */}
             <div className="hero-balance hero-balance-legacy">
                 <p className="hero-label">Total Balance</p>
