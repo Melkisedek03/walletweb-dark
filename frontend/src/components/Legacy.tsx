@@ -1,18 +1,21 @@
 import { useEffect } from 'react';
-import { nusanToNux } from '../lib/transaction';
+import { estimateSize, nusanToNux } from '../lib/transaction';
+import { DEFAULT_FEE_RATE, DUST_NUSAN } from '../lib/network';
 import type { AddressBalance } from '../lib/electrs';
 import { useIncomingNotice } from '../hooks/useIncomingNotice';
 
 interface LegacyProps {
     address: string;
+    bech32address: string;
     balance: AddressBalance | null;
     isBech32: boolean,
     onSend: () => void;
+    onMigrate: () => void;
     onRefreshTwo: () => void;
     onHistory: () => void;
 }
 
-export function Legacy({ address, balance, onRefreshTwo, onSend, onHistory }: LegacyProps) {
+export function Legacy({ address, bech32address, balance, onRefreshTwo, onSend, onMigrate, onHistory }: LegacyProps) {
     useEffect(() => {
         onRefreshTwo();
         const interval = setInterval(onRefreshTwo, 60000); // Refresh every 60s
@@ -22,6 +25,18 @@ export function Legacy({ address, balance, onRefreshTwo, onSend, onHistory }: Le
     const balancenux = balance ? nusanToNux(balance.available) : '---';
     const confirmedNux = balance ? nusanToNux(balance.confirmed) : '---';
     const pendingNux = balance ? nusanToNux(balance.mempool) : '---';
+    // Minimum total for a one-input sweep: the fee of one legacy
+    // input plus one bech32 output, plus dust for the payment
+    // output. With more inputs the fee is higher; the send flow
+    // validates the exact amount before broadcasting, so this is
+    // only a lower bound for enabling the button.
+    const minMovable =
+        estimateSize([{ isBech32: false }], [bech32address]) * DEFAULT_FEE_RATE + DUST_NUSAN;
+    const isEmpty = !!balance && balance.confirmed === 0 && balance.mempool === 0;
+    const isLocked = !!balance && balance.available === 0 && !isEmpty;
+    const tooSmall = !!balance && balance.available > 0 && balance.available < minMovable;
+    const canMigrate = !!balance && balance.available >= minMovable;
+    const shortBech32 = `${bech32address.slice(0, 14)}…${bech32address.slice(-8)}`;
     return (
         <div className="space-y-6">
             {noticeNusan !== null && (
@@ -69,6 +84,31 @@ export function Legacy({ address, balance, onRefreshTwo, onSend, onHistory }: Le
             <div className="grid grid-cols-1 gap-4">
                 <button onClick={onSend} className="btn-legacy text-center py-4 rounded-full">
                     SWEEP
+                </button>
+            </div>
+
+            {/* One-time migration to bech32 */}
+            <div className="card space-y-3">
+                <p className="text-sm font-medium">Move to bech32</p>
+                <p className="text-dark-300 text-sm">
+                    Sends the full legacy balance to the bech32 wallet
+                    (<span className="font-mono text-xs break-all">{shortBech32}</span>), minus the fee.
+                </p>
+                {isEmpty && (
+                    <p className="text-dark-400 text-sm">The legacy balance is already empty. Nothing to move.</p>
+                )}
+                {isLocked && (
+                    <p className="text-dark-400 text-sm">The legacy balance is locked by a pending transaction. Try again after it confirms.</p>
+                )}
+                {tooSmall && (
+                    <p className="text-dark-400 text-sm">The remaining balance is too small to move: it does not cover the fee of the transfer.</p>
+                )}
+                <button
+                    onClick={onMigrate}
+                    disabled={!canMigrate}
+                    className="btn-primary w-full"
+                >
+                    Move to bech32
                 </button>
             </div>
 

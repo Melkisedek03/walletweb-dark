@@ -26,6 +26,11 @@ function App() {
     setTheme(next);
   };
 
+  // Legacy to bech32 migration: when true, the Send view opens
+  // pre-filled with the bech32 address and sweep on. Cleared on
+  // every other navigation so a normal send never inherits it.
+  const [migration, setMigration] = useState(false);
+
   const isLoggedIn = !!wallet.privateKeyBech32 && !!wallet.privateKey && !!wallet.walletData;
   const navViews = ['dashboard', 'legacy', 'send', 'receive', 'history', 'addressbook'];
 
@@ -125,7 +130,7 @@ function App() {
             isBech32={wallet.trxType}
             onInit={() => { wallet.setBech32(true) }}
             onRefresh={wallet.refreshBalanceBech32}
-            onSend={() => { wallet.setView('send'); wallet.setBech32(true); }}
+            onSend={() => { setMigration(false); wallet.setView('send'); wallet.setBech32(true); }}
             onReceive={() => wallet.setView('receive')}
             onAddressBook={() => wallet.setView('addressbook')}
           />
@@ -135,10 +140,12 @@ function App() {
         return wallet.walletData ? (
           <Legacy
             address={wallet.walletData.address}
+            bech32address={wallet.walletData.bech32address}
             balance={wallet.balance}
             isBech32={wallet.trxType}
             onRefreshTwo={wallet.refreshBalance}
-            onSend={() => { wallet.setView('send'); wallet.setBech32(false); }}
+            onSend={() => { setMigration(false); wallet.setView('send'); wallet.setBech32(false); }}
+            onMigrate={() => { setMigration(true); wallet.setView('send'); wallet.setBech32(false); }}
             onHistory={() => { wallet.setBech32(false); wallet.setView('history'); }}
           />
         ) : null;
@@ -154,12 +161,14 @@ function App() {
             balanceBech32={wallet.balancebech32}
             isBech32={wallet.trxType}
             onDone={() => {
+              setMigration(false);
               wallet.refreshBalance();
               wallet.refreshBalanceBech32();
               wallet.setView('dashboard');
               wallet.setBech32(true);
             }}
             onAddressBook={() => wallet.setView('addressbook')}
+            migrationTo={migration ? wallet.walletData.bech32address : undefined}
           />
         ) : null;
 
@@ -190,7 +199,7 @@ function App() {
       onLogout={wallet.handleLogout}
       showNav={isLoggedIn && navViews.includes(wallet.view)}
       activeView={wallet.view}
-      onNavigate={(v) => wallet.setView(v as WalletView)}
+      onNavigate={(v) => { setMigration(false); wallet.setView(v as WalletView); }}
       theme={theme}
       onToggleTheme={toggleTheme}
     >

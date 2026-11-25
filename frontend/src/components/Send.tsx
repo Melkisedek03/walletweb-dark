@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { buildTransaction, fetchUtxos, nuxToNusan, nusanToNux, toUtxo, type UTXO } from '../lib/transaction';
+import { buildTransaction, estimateSize, fetchUtxos, nuxToNusan, nusanToNux, toUtxo, type UTXO } from '../lib/transaction';
 import { broadcastTx, fetchOwnMempoolUtxos, type AddressBalance } from '../lib/electrs';
 import { getLockedOutpoints, getPendingTxs, getPendingUtxos, addPendingTx } from '../lib/pending';
-import { COIN } from '../lib/network';
+import { COIN, DEFAULT_FEE_RATE } from '../lib/network';
 import {
   searchAddressBook,
   getAddressBookLabel,
@@ -20,18 +20,24 @@ interface SendProps {
   balanceBech32: AddressBalance | null;
   onDone: () => void;
   onAddressBook?: () => void;
+  // Migration mode: the form starts pre-filled with the recipient
+  // below and sweep on, and the recipient cannot be changed. Used
+  // for the one-time legacy to bech32 move.
+  migrationTo?: string;
 }
 
 type SendStep = 'form' | 'confirm' | 'sending' | 'success';
 
-export function Send({ address, bech32address, privateKey, privateKeyBech32, balance, balanceBech32, isBech32, onDone, onAddressBook }: SendProps) {
+export function Send({ address, bech32address, privateKey, privateKeyBech32, balance, balanceBech32, isBech32, onDone, onAddressBook, migrationTo }: SendProps) {
+  const migration = !!migrationTo;
   const [step, setStep] = useState<SendStep>('form');
-  const [toAddress, setToAddress] = useState('');
+  const [toAddress, setToAddress] = useState(migrationTo ?? '');
   const [amount, setAmount] = useState('');
-  const [sweep, setSweep] = useState(false);
+  const [sweep, setSweep] = useState(migration);
   const [error, setError] = useState<string | null>(null);
   const [txResult, setTxResult] = useState<{ txid: string; fee: number } | null>(null);
   const [usesPending, setUsesPending] = useState(false);
+  const [estimatedFee, setEstimatedFee] = useState<number | null>(null);
 
   const activeBalance = isBech32 ? balanceBech32 : balance;
   const maxAmount = activeBalance ? activeBalance.available / COIN : 0;
@@ -73,6 +79,26 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
     const extra = ownMempool.filter((u) => !seen.has(`${u.txid}:${u.outputIndex}`));
     return [...available, ...pending, ...extra];
   }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isValidForm) return;
+    // For a sweep, estimate the fee up front so the confirm step can
+    // show it. The broadcast rebuilds the transaction from a fresh
+    // UTXO set, so the estimate can differ if the set changed in
+    // between; the exact fee is shown on the success screen.
+    if (sweep) {
+      try {
+        const utxos = await loadSpendableUtxos();
+        setEstimatedFee(
+          estimateSize(utxos.map(() => ({ isBech32 })), [toAddress]) * DEFAULT_FEE_RATE,
+        );
+      } catch {
+        setEstimatedFee(null);
+      }
+    }
+    setStep('confirm');
+  };
 
   const handleConfirm = async () => {
     setStep('sending');
@@ -164,6 +190,12 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
             <p className="text-dark-400 text-xs">Amount</p>
             <p className="text-xl font-bold num">{sweep ? 'All available (sweep)' : `${amount} NUX`}</p>
           </div>
+          {sweep && estimatedFee !== null && (
+            <div>
+              <p className="text-dark-400 text-xs">Estimated fee</p>
+              <p className="font-mono text-sm num">{nusanToNux(estimatedFee)} NUX</p>
+            </div>
+          )}
         </div>
 
         {error && (
@@ -198,12 +230,19 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
       <p className="text-dark-400 text-sm font-medium mb-2">{isBech32 ? bech32address : address}</p>
 
       <form
-        onSubmit={(e: React.FormEvent) => {
-          e.preventDefault();
-          if (isValidForm) setStep('confirm');
-        }}
+        onSubmit={handleSubmit}
         className="space-y-4"
       >
+        {migration && (
+          <div className="card bg-orange-500/10 border border-orange-500/30">
+            <p className="text-orange-400 text-sm font-medium">
+              Moving the legacy balance to the bech32 wallet.
+            </p>
+            <p className="text-dark-300 text-sm mt-1">
+              The full available balance is sent to the bech32 address below, minus the fee.
+            </p>
+          </div>
+        )}
         <div>
           <label className="block text-sm font-medium text-dark-300 mb-2">
             Recipient Address
@@ -214,15 +253,16 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
             placeholder="N/X/nu1q..."
             value={toAddress}
             onChange={(e) => setToAddress(e.target.value.trim())}
-            autoFocus
+            autoFocus={!migration}
+            readOnly={migration}
           />
           {toAddress && !isValidNusacoinAddress(toAddress) && (
             <p className="text-red-400 text-sm mt-1">Invalid Nusacoin address</p>
           )}
-          {savedLabel && (
+          {!migration && savedLabel && (
             <p className="text-nux-400 text-sm mt-1">Saved as: {savedLabel}</p>
           )}
-          {addressSuggestions.length > 0 && (
+          {!migration && addressSuggestions.length > 0 && (
             <div className="mt-2 space-y-1">
               {addressSuggestions.map((entry) => (
                 <button
@@ -240,7 +280,7 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
               ))}
             </div>
           )}
-          {onAddressBook && (
+          {!migration && onAddressBook && (
             <button
               type="button"
               onClick={onAddressBook}
@@ -283,6 +323,7 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
               type="checkbox"
               checked={sweep}
               onChange={(e) => setSweep(e.target.checked)}
+              disabled={migration}
             />
             Send all (sweep): spend the full available balance minus the fee, with no change output.
           </label>
