@@ -28,6 +28,15 @@ export interface PendingTx {
   spent: PendingSpent[];
   change: PendingChange | null;
   createdAt: number;
+  // 'broadcast' (default for entries written before this field
+  // existed): the transaction was sent to the network. 'signed':
+  // fully signed offline but not broadcast yet; its inputs stay
+  // locked and its change stays spendable, and the wallet offers
+  // to broadcast or discard it when back online.
+  status?: 'broadcast' | 'signed';
+  // Signed PSBT (base64) of a 'signed' transaction, for export to
+  // a broadcaster. Only stored for offline-signed transactions.
+  psbtBase64?: string;
 }
 
 export interface PendingUtxo {
@@ -79,6 +88,24 @@ export function removePendingTx(address: string, txid: string): void {
   ledger[address] = list.filter((t) => t.txid !== txid);
   if (ledger[address].length === 0) delete ledger[address];
   saveLedger(ledger);
+}
+
+// Mark a signed (not yet broadcast) transaction as broadcast after
+// it was sent to the network, so it is reconciled like any other
+// pending transaction from then on.
+export function markPendingTxBroadcast(address: string, txid: string): void {
+  const ledger = loadLedger();
+  const list = ledger[address] ?? [];
+  const entry = list.find((t) => t.txid === txid);
+  if (entry) {
+    entry.status = 'broadcast';
+    saveLedger(ledger);
+  }
+}
+
+// Transactions signed offline but not broadcast yet, for this address.
+export function getSignedPendingTxs(address: string): PendingTx[] {
+  return getPendingTxs(address).filter((t) => t.status === 'signed');
 }
 
 // Outpoints spent by pending transactions for this address.

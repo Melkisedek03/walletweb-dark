@@ -3,6 +3,7 @@ import { estimateSize, nusanToNux } from '../lib/transaction';
 import { DEFAULT_FEE_RATE, DUST_NUSAN } from '../lib/network';
 import type { AddressBalance } from '../lib/electrs';
 import { useIncomingNotice } from '../hooks/useIncomingNotice';
+import { SignedPending } from './SignedPending';
 
 interface LegacyProps {
     address: string;
@@ -49,6 +50,7 @@ export function Legacy({ address, bech32address, balance, onRefreshTwo, onSend, 
                     </button>
                 </div>
             )}
+            <SignedPending address={address} onChanged={onRefreshTwo} />
             {/* Deprecation notice: legacy support will be removed in a
                 future release; balances should move to bech32 first. */}
             <div className="card bg-orange-500/10 border border-orange-500/30">

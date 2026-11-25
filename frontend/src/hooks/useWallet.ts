@@ -180,7 +180,14 @@ export function useWallet() {
             continue;
           }
           const status = await fetchTxStatus(pending.txid);
-          if (status === null || status.confirmed) {
+          // A signed-but-not-broadcast transaction is unknown to
+          // electrs (status lookup returns nothing) — that is
+          // expected, not a reason to drop it. Keep it locked
+          // until it confirms on chain (broadcast elsewhere) or
+          // the user discards it.
+          if (status === null) {
+            if (pending.status !== 'signed') removePendingTx(addr, pending.txid);
+          } else if (status.confirmed) {
             removePendingTx(addr, pending.txid);
           }
         }

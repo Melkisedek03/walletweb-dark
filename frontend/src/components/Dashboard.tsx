@@ -11,6 +11,7 @@ import {
 } from '../lib/push';
 import type { AddressBalance } from '../lib/electrs';
 import { useIncomingNotice } from '../hooks/useIncomingNotice';
+import { SignedPending } from './SignedPending';
 
 interface DashboardProps {
   address: string;
@@ -114,6 +115,7 @@ export function Dashboard({ address, bech32address, balance, onInit, onRefresh, 
           </button>
         </div>
       )}
+      <SignedPending address={bech32address} onChanged={onRefresh} />
       {/* Balance hero */}
       <div className="hero-balance">
         <p className="hero-label">Total Balance</p>

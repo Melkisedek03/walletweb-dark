@@ -178,6 +178,20 @@ export async function fetchTxStatus(txid: string): Promise<ElectrsTx['status'] |
   return res.json() as Promise<ElectrsTx['status']>;
 }
 
+// Outspend check for one outpoint. The endpoint answers
+// {"spent": false} even for outpoints the indexer never saw, so
+// there is no 404 case. Used before broadcasting an offline-signed
+// transaction: a spent input means the transaction can never
+// confirm and must be discarded instead.
+export async function fetchOutspend(
+  txid: string,
+  vout: number,
+): Promise<{ spent: boolean }> {
+  return electrsJson<{ spent: boolean }>(
+    `/tx/${encodeURIComponent(txid)}/outspend/${vout}`,
+  );
+}
+
 // Broadcast: POST raw hex as plain text. The response is a plain-text
 // txid on success, or plain-text error on failure. It is not JSON.
 export async function broadcastTx(hex: string): Promise<string> {
