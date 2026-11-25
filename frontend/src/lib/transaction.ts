@@ -77,6 +77,12 @@ export interface BuiltTransaction {
   usesPendingInput: boolean;
 }
 
+// BIP 125 opt-in RBF: a transaction is replaceable when any input
+// sequence is below 0xFFFFFFFE. 0xFFFFFFFD is the standard value;
+// leaving the sequence unset keeps the bitcoinjs-lib default
+// 0xFFFFFFFF, which does not signal RBF.
+const RBF_SEQUENCE = 0xfffffffd;
+
 // Build and sign one transaction. Legacy and bech32 share this path:
 // payment output = requested amount, change back to the sender when
 // above dust, fee from per-type size estimates. Sweep is an explicit
@@ -92,6 +98,11 @@ export async function buildTransaction(params: {
   utxos: UTXO[];
   sweep?: boolean;
   feeRate?: number;
+  // BIP 125 opt-in RBF: when true, every input carries sequence
+  // 0xFFFFFFFD so the transaction can later be replaced by a
+  // higher-fee version. Off by default; the fee-bump flow itself
+  // (building the replacement) is a separate feature.
+  rbf?: boolean;
 }): Promise<BuiltTransaction> {
   const {
     fromAddress,
@@ -104,6 +115,7 @@ export async function buildTransaction(params: {
     utxos,
     sweep = false,
     feeRate = DEFAULT_FEE_RATE,
+    rbf = false,
   } = params;
 
   const changeAddress = isBech32 ? fromBech32 : fromAddress;
@@ -191,12 +203,14 @@ export async function buildTransaction(params: {
         hash: utxo.txid,
         index: utxo.outputIndex,
         nonWitnessUtxo: rawTxCache.get(utxo.txid)!,
+        ...(rbf ? { sequence: RBF_SEQUENCE } : {}),
       });
     } else {
       psbt.addInput({
         hash: utxo.txid,
         index: utxo.outputIndex,
         witnessUtxo: { script: p2wpkh.output!, value: utxo.satoshis },
+        ...(rbf ? { sequence: RBF_SEQUENCE } : {}),
       });
     }
   }
