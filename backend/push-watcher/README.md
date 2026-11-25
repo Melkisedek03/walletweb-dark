@@ -1,6 +1,6 @@
 # Web-wallet push backend
 
-Two small Python services (stdlib + `firebase-admin`) that power the
+Two small Python services (stdlib + `pywebpush`) that power the
 web wallet's opt-in push notifications, running on the same VPS as the
 PUNDI watcher (vps3278893). They are siblings of the field-proven
 PUNDI services: `webpush_mapping.py` mirrors `pundi_mapping.py` and
@@ -8,16 +8,16 @@ PUNDI services: `webpush_mapping.py` mirrors `pundi_mapping.py` and
 differences called out in each file's header.
 
 ```
-electrs (TCP 50009) --subscribe--> webwallet-watcher --Firebase Admin--> FCM --> browser
+electrs (TCP 50009) --subscribe--> webwallet-watcher --pywebpush (Web Push)--> browser push service --> browser
                                           ^
-                    {endpoint: [addresses]} |
+                    {endpoint: {addresses, keys}} |
                       from webpush_mapping (POST /api/webpush/subscribe)
 ```
 
 The wallet subscribes with both of its addresses (bech32 + legacy).
-When a new transaction pays either address, the watcher sends an FCM
-Web Push message ("Incoming NUX" / "<amount> NUX received"). The
-user's own sends never notify: the watcher checks each new
+When a new transaction pays either address, the watcher sends a
+standard Web Push message ("Incoming NUX" / "<amount> NUX received").
+The user's own sends never notify: the watcher checks each new
 transaction's inputs against the watched address first.
 
 ## Files
@@ -25,7 +25,7 @@ transaction's inputs against the watched address first.
 | File | Role |
 | --- | --- |
 | `webpush_mapping.py` | Subscription service: SQLite store, `POST /api/webpush/subscribe`, `POST /api/webpush/unsubscribe`, `GET /internal/webpush_subscriptions`, `POST /internal/webpush/delete`, `GET /health`. Binds `127.0.0.1:8085` by default. |
-| `webwallet_watcher.py` | Electrum subscribe watcher + FCM Web Push sender. |
+| `webwallet_watcher.py` | Electrum subscribe watcher + standard Web Push sender (pywebpush). |
 | `webwallet-push.service` | systemd unit for the subscription service. |
 | `webwallet-watcher.service` | systemd unit for the watcher. |
 
@@ -69,22 +69,29 @@ sudo cp webpush_mapping.py /opt/webwallet-push/
 sudo cp webwallet_watcher.py /opt/webwallet-watcher/
 ```
 
-### 2. Install the Firebase Admin SDK
+### 2. Install pywebpush
 
 ```bash
-pip install firebase-admin
+pip install pywebpush
 ```
 
-### 3. Service-account key (separate copy, never in the repo)
+### 3. VAPID private key (already on the VPS, never in the repo)
 
-Place a service-account JSON for the same Firebase project the
-PUNDI watcher uses, as its own copy (rotating one must not break
-the other):
+The watcher signs every push with the VAPID private key. The key
+file is already installed on this host at
+`/opt/webwallet-watcher/vapid-private-key.txt` (one line: the raw
+base64url private key, 43 chars, no padding — NOT a PEM file). Do not
+copy it anywhere else, and do not commit it. Verify it is readable
+only by the service user:
 
 ```bash
-# place the file directly on the VPS, e.g. by pasting it into the editor
-sudo chmod 600 /opt/webwallet-watcher/firebase-service-account.json
+sudo chmod 600 /opt/webwallet-watcher/vapid-private-key.txt
+sudo chown webpush:webpush /opt/webwallet-watcher/vapid-private-key.txt
 ```
+
+The key file's path is set in `webwallet-watcher.service`
+(`VAPID_PRIVATE_KEY_FILE`); the VAPID subject claim defaults to the
+wallet origin in the code (`VAPID_SUBJECT` overrides it).
 
 ### 4. Dedicated low-privilege user
 
@@ -157,7 +164,8 @@ change belongs to the dompet host, not to vps3278893.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `GOOGLE_APPLICATION_CREDENTIALS` | (required) | Service-account JSON path. Never commit this file. |
+| `VAPID_PRIVATE_KEY_FILE` | `/opt/webwallet-watcher/vapid-private-key.txt` | Raw base64url VAPID private key file (one line, 43 chars, no padding — NOT PEM). Missing/unreadable file stops the watcher at startup. Never commit this file. |
+| `VAPID_SUBJECT` | (wallet origin used by the successful test) | VAPID `sub` claim. Set only to override the default. |
 | `ELECTRS_HOST` / `ELECTRS_PORT` | `127.0.0.1` / `50009` | electrs Electrum protocol endpoint. |
 | `MAPPING_URL` | `http://127.0.0.1:8085/internal/webpush_subscriptions` | Endpoint map from the subscription service. |
 | `DELETE_URL` | `http://127.0.0.1:8085/internal/webpush/delete` | Stale-endpoint cleanup hook. |
@@ -167,11 +175,11 @@ change belongs to the dompet host, not to vps3278893.
 
 ## Notes
 
-- A failed FCM send for a transient reason is lost, not retried:
+- A failed push send for a transient reason is lost, not retried:
   the txid stays in the watcher's `seen` set, so it will not
   re-notify forever. The in-app notice still shows the arrival when
   the wallet is next opened.
-- Dead endpoints (`UnregisteredError`, `SenderIdMismatchError`) are
+- Dead endpoints (the push service answers 404/410) are
   deleted from the subscription store automatically via
   `/internal/webpush/delete`.
 - The subscription service keeps no logs of amounts or txids; the
