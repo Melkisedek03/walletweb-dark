@@ -11,9 +11,11 @@ Web Push keys (p256dh, auth) and the wallet addresses it watches
 the addresses on electrs, and sends an FCM Web Push message when a new
 transaction pays one of them.
 
-Endpoints (bind localhost only; expose /api/* publicly via reverse proxy):
-  POST /api/webpush/subscribe    upsert {endpoint, keys: {p256dh, auth}, addresses}
-  POST /api/webpush/unsubscribe  delete one subscription by {endpoint}
+Endpoints (bind localhost only; all routes are prefix-less — in
+production the public /api/webpush/ prefix is stripped by the nginx
+proxy_pass before requests reach this service):
+  POST /subscribe    upsert {endpoint, keys: {p256dh, auth}, addresses}
+  POST /unsubscribe  delete one subscription by {endpoint}
   GET  /internal/webpush_subscriptions   {"<endpoint>": ["<address>", ...]} (watcher)
   POST /internal/webpush/delete  delete one subscription by {endpoint} (stale cleanup)
   GET  /health                   {"ok": true, "subscriptions": N}
@@ -198,7 +200,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urllib.parse.urlsplit(self.path).path.rstrip("/") or "/"
-        if path == "/api/webpush/subscribe":
+        if path == "/subscribe":
             fields = self._read_json_body()
             endpoint = self._read_endpoint(fields)
             if not endpoint.startswith("https://"):
@@ -221,7 +223,7 @@ class Handler(BaseHTTPRequestHandler):
             LOG.info("subscribe endpoint=%.20s... addrs=%d",
                      endpoint, len(addrs))
             self._ok("subscription saved (%d addresses)" % len(addrs))
-        elif path == "/api/webpush/unsubscribe":
+        elif path == "/unsubscribe":
             fields = self._read_json_body()
             endpoint = self._read_endpoint(fields)
             if not endpoint:
