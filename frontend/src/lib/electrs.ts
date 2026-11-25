@@ -56,6 +56,11 @@ export interface ElectrsTx {
   vin: ElectrsVin[];
   vout: ElectrsVout[];
   fee?: number;
+  // Present in the Esplora-style transaction objects; kept optional
+  // because older cached shapes may not carry them.
+  size?: number;
+  vsize?: number;
+  weight?: number;
 }
 
 // Balance in nusan (satoshis), derived from address stats.
@@ -176,6 +181,17 @@ export async function fetchTxStatus(txid: string): Promise<ElectrsTx['status'] |
     throw new Error(text || `Failed to fetch transaction status ${txid}`);
   }
   return res.json() as Promise<ElectrsTx['status']>;
+}
+
+// Current chain tip height, for confirmation counts. The endpoint
+// answers with a plain number, not JSON.
+export async function fetchTipHeight(): Promise<number> {
+  const res = await electrsFetch('/blocks/tip/height');
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `Failed to fetch tip height (${res.status})`);
+  }
+  return Number((await res.text()).trim());
 }
 
 // Outspend check for one outpoint. The endpoint answers
