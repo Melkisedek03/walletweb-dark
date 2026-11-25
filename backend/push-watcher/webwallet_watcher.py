@@ -536,17 +536,17 @@ def send_push(endpoint, address, txid, amount_nusan=None, keys=None):
                     endpoint, txid)
         return
     if amount_nusan:
-        body = "%s NUX received" % _fmt_nux(amount_nusan)
+        body = "🪙 %s NUX received" % _fmt_nux(amount_nusan)
         data = {"type": "incoming_tx",
                 "txid": txid,
                 "amount_nux": _fmt_nux(amount_nusan),
                 "address": address}
     else:
-        body = "Coins received"
+        body = "🪙 Coins received"
         data = {"type": "incoming_tx",
                 "txid": txid,
                 "address": address}
-    payload = {"notification": {"title": "Incoming NUX", "body": body},
+    payload = {"notification": {"title": "💰 Incoming NUX", "body": body},
                "data": data}
     try:
         webpush(
