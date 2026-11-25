@@ -24,7 +24,8 @@ Your keys are generated and stored **only in your browser**, encrypted with your
 - **Address Book** — save labelled recipient addresses in this browser, and pick them from the send form; entries are never sent to a server
 - **Incoming notice** — while the wallet tab is open, a banner appears when the total balance increases during a refresh; this is not a background push notification
 - **Push notifications (opt-in)** — turn on Notifications on the Wallet screen to be alerted when coins arrive, even with the browser closed; off by default, and turning it on stores the wallet's addresses next to a push endpoint on the notification server (deletable any time from the same toggle or by logging out); iPhone needs the installed PWA (iOS 16.4+)
-- **Installable (PWA)** — the wallet can be installed on a phone or desktop home screen and its app shell opens while offline; balance, UTXO, and broadcast data are never cached, so sending still needs a connection
+- **Installable (PWA)** — the wallet can be installed on a phone or desktop home screen and its app shell opens while offline; balance, UTXO, and broadcast data are never cached, so a broadcast still needs a connection (signing itself can work offline, see below)
+- **Offline signing** — the send form can build and sign a transaction from a locally cached UTXO set while offline; the signed hex and PSBT can be exported (copy or download) for a broadcaster, or broadcast later from the Wallet screen
 - **Real-time balance** — fetched directly from the Nusacoin blockchain
 - **Copy recovery phrase** — one-click copy for safe backup
 - **Dark and light themes** — switch from the header on any screen; the choice is stored in this browser and dark is the default
@@ -44,6 +45,36 @@ plus own unconfirmed outputs, minus locked inputs). Unconfirmed
 outputs from third parties are not spendable until confirmation.
 This matters on chains with long block intervals, where change would
 otherwise look missing for hours.
+
+A transaction signed offline but not broadcast yet is recorded the
+same way, with a distinct "signed" status: its inputs stay locked
+and its change stays tracked, and the Wallet screen offers to
+broadcast it ("Broadcast now") or discard it ("Discard") when back
+online. It is never dropped just because electrs does not know it
+yet — only a confirmation on chain removes it. History shows it as
+"Signed — not broadcast".
+
+## Offline signing
+
+While online, the wallet keeps a local cache of the spendable UTXO
+set (public data only: txids, outpoints, values, and the parent
+transaction hex for legacy inputs), refreshed on every balance
+refresh, on every send-form UTXO load, and after every own
+broadcast. The cache is only as fresh as the last online moment.
+
+With the "Sign offline" box ticked on the send form — or
+automatically, when the UTXO load fails and a cache exists — the
+transaction is built and signed from that cache and saved without
+broadcasting. The success screen offers the signed raw hex and the
+signed PSBT (base64) for copy or download, so either can be handed
+to a broadcaster (electrs `POST /tx`, or Nusacoin Core
+`sendrawtransaction`; the PSBT can be inspected first with
+`decodepsbt` and finalized with `finalizepsbt`). Before
+broadcasting, every input must be checked against
+`/tx/:txid/outspend/:vout`: a spent input means the transaction can
+never confirm and must be discarded instead. The "Broadcast now"
+action on the Wallet screen runs this check first. Signing stays
+fully local in all cases: keys never leave the browser.
 
 ## Progressive Web App
 

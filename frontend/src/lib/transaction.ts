@@ -65,6 +65,11 @@ export function estimateSize(
 
 export interface BuiltTransaction {
   hex: string;
+  // Finalized PSBT, base64-encoded, for export to a broadcaster
+  // (Nusacoin Core: decodepsbt, then finalizepsbt). Returned
+  // alongside the extracted hex; nothing else changes about the
+  // built transaction.
+  psbtBase64: string;
   fee: number;
   txid: string;
   spent: Array<{ txid: string; vout: number; value: number }>;
@@ -218,6 +223,10 @@ export async function buildTransaction(params: {
 
   return {
     hex: tx.toHex(),
+    // The PSBT is finalized, so it carries the signatures; a
+    // broadcaster can inspect it (decodepsbt) and broadcast the
+    // extracted hex, or finalize it again (finalizepsbt).
+    psbtBase64: psbt.toBase64(),
     fee,
     txid,
     spent: selected.map((u) => ({ txid: u.txid, vout: u.outputIndex, value: u.satoshis })),

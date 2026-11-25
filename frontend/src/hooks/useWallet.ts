@@ -11,6 +11,8 @@ import {
 import { fetchBalance, fetchUtxos, fetchTxStatus, fetchOwnMempoolUtxos, type AddressBalance } from '../lib/electrs';
 import { getPendingTxs, removePendingTx, getLockedOutpoints, getPendingUtxos } from '../lib/pending';
 import { deletePushSubscription } from '../lib/push';
+import { cacheSpendableUtxos } from '../lib/utxocache';
+import { toUtxo, type UTXO } from '../lib/transaction';
 
 export type WalletView =
   | 'landing'
@@ -163,7 +165,7 @@ export function useWallet() {
     });
   }, []);
 
-  const refreshOne = useCallback(async (addr: string): Promise<AddressBalance | null> => {
+  const refreshOne = useCallback(async (addr: string, isBech32: boolean): Promise<AddressBalance | null> => {
     try {
       const stats = await fetchBalance(addr);
       // Reconcile the pending ledger: drop a pending transaction once
@@ -178,7 +180,14 @@ export function useWallet() {
             continue;
           }
           const status = await fetchTxStatus(pending.txid);
-          if (status === null || status.confirmed) {
+          // A signed-but-not-broadcast transaction is unknown to
+          // electrs (status lookup returns nothing) — that is
+          // expected, not a reason to drop it. Keep it locked
+          // until it confirms on chain (broadcast elsewhere) or
+          // the user discards it.
+          if (status === null) {
+            if (pending.status !== 'signed') removePendingTx(addr, pending.txid);
+          } else if (status.confirmed) {
             removePendingTx(addr, pending.txid);
           }
         }
@@ -204,6 +213,19 @@ export function useWallet() {
       const ownMempoolSpendable = ownMempool
         .filter((u) => !seenKeys.has(`${u.txid}:${u.outputIndex}`))
         .reduce((sum, u) => sum + u.satoshis, 0);
+      // Keep the offline UTXO cache fresh while online: the same
+      // spendable set the send form uses, saved with parent hex
+      // for legacy inputs so it can sign offline later. The
+      // balance refresh runs on mount and every 30s/60s, so the
+      // cache is at most that old when the network drops.
+      const spendable: UTXO[] = [
+        ...confirmedList.map((u) => ({ txid: u.txid, outputIndex: u.vout, satoshis: u.value, script: '' })),
+        ...pendingList.map(toUtxo),
+        ...ownMempool
+          .filter((u) => !seenKeys.has(`${u.txid}:${u.outputIndex}`))
+          .map((u) => ({ txid: u.txid, outputIndex: u.outputIndex, satoshis: u.satoshis, script: '', isPending: true })),
+      ];
+      void cacheSpendableUtxos(addr, isBech32, spendable);
       return { ...stats, available: confirmedSpendable + pendingChange + ownMempoolSpendable };
     } catch {
       return null;
@@ -212,13 +234,13 @@ export function useWallet() {
 
   const refreshBalance = useCallback(async () => {
     if (!state.walletData) return;
-    const balance = await refreshOne(state.walletData.address);
+    const balance = await refreshOne(state.walletData.address, false);
     if (balance) setState((s) => ({ ...s, balance }));
   }, [state.walletData, refreshOne]);
 
   const refreshBalanceBech32 = useCallback(async () => {
     if (!state.walletData) return;
-    const balancebech32 = await refreshOne(state.walletData.bech32address);
+    const balancebech32 = await refreshOne(state.walletData.bech32address, true);
     if (balancebech32) setState((s) => ({ ...s, balancebech32 }));
   }, [state.walletData, refreshOne]);
 

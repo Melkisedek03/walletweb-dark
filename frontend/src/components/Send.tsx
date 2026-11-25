@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { buildTransaction, estimateSize, fetchUtxos, nuxToNusan, nusanToNux, toUtxo, type UTXO } from '../lib/transaction';
 import { broadcastTx, fetchOwnMempoolUtxos, type AddressBalance } from '../lib/electrs';
 import { getLockedOutpoints, getPendingTxs, getPendingUtxos, addPendingTx } from '../lib/pending';
+import { cacheSpendableUtxos, loadUtxoCache, applySignedTxToCache } from '../lib/utxocache';
 import { COIN, DEFAULT_FEE_RATE } from '../lib/network';
 import {
   searchAddressBook,
@@ -52,10 +53,22 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
   const [toAddress, setToAddress] = useState(migrationTo ?? prefillTo ?? '');
   const [amount, setAmount] = useState('');
   const [sweep, setSweep] = useState(migration);
+  // Offline signing: build and sign from the cached UTXO set and
+  // save the signed transaction without broadcasting, so the hex
+  // or PSBT can be shared with a broadcaster. Not available in
+  // migration mode: the one-time legacy move broadcasts at once.
+  const [offlineMode, setOfflineMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [txResult, setTxResult] = useState<{ txid: string; fee: number } | null>(null);
+  const [txResult, setTxResult] = useState<{
+    txid: string;
+    fee: number;
+    hex?: string;
+    psbtBase64?: string;
+    signedOffline?: boolean;
+  } | null>(null);
   const [usesPending, setUsesPending] = useState(false);
   const [estimatedFee, setEstimatedFee] = useState<number | null>(null);
+  const [copied, setCopied] = useState<'hex' | 'psbt' | null>(null);
 
   const activeBalance = isBech32 ? balanceBech32 : balance;
   const maxAmount = activeBalance ? activeBalance.available / COIN : 0;
@@ -112,7 +125,12 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
       [...available, ...pending].map((u) => `${u.txid}:${u.outputIndex}`),
     );
     const extra = ownMempool.filter((u) => !seen.has(`${u.txid}:${u.outputIndex}`));
-    return [...available, ...pending, ...extra];
+    const spendable = [...available, ...pending, ...extra];
+    // Keep the offline UTXO cache fresh while online, so the send
+    // form can build and sign from it when the network is gone.
+    // Fire-and-forget: a cache failure must never block sending.
+    void cacheSpendableUtxos(sender, isBech32, spendable);
+    return spendable;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -141,7 +159,31 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
 
     try {
       const sender = isBech32 ? bech32address : address;
-      const utxos = await loadSpendableUtxos();
+      // UTXO source: online by default. Offline mode (checkbox)
+      // builds from the cached set; if the cache is empty it falls
+      // back to a fresh online scan but still does not broadcast.
+      // Without the checkbox, a failed online load (network gone,
+      // electrs down) falls back to the cache and signs offline
+      // instead of failing outright.
+      let utxos: UTXO[];
+      let offline = offlineMode;
+      if (offlineMode) {
+        const cached = loadUtxoCache(sender);
+        if (cached && cached.utxos.length > 0) {
+          utxos = cached.utxos;
+        } else {
+          utxos = await loadSpendableUtxos();
+        }
+      } else {
+        try {
+          utxos = await loadSpendableUtxos();
+        } catch (err) {
+          const cached = loadUtxoCache(sender);
+          if (!cached || cached.utxos.length === 0) throw err;
+          utxos = cached.utxos;
+          offline = true;
+        }
+      }
       const amountNusan = sweep ? 0 : nuxToNusan(amount);
       const tx = await buildTransaction({
         fromAddress: address,
@@ -155,6 +197,35 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
         sweep,
       });
 
+      if (offline) {
+        // Signed, not broadcast: record it with the new status so
+        // its inputs stay locked and its change stays tracked, and
+        // the wallet offers to broadcast or discard it later.
+        // The PSBT is stored with it for export to a broadcaster.
+        addPendingTx(sender, {
+          txid: tx.txid,
+          hex: tx.hex,
+          spent: tx.spent,
+          change: tx.change,
+          createdAt: Date.now(),
+          status: 'signed',
+          psbtBase64: tx.psbtBase64,
+        });
+        // Update the cached set (spent inputs out, change in) so
+        // a later offline send does not reuse the same inputs.
+        applySignedTxToCache(sender, tx.spent, tx.change, tx.hex);
+        setUsesPending(tx.usesPendingInput);
+        setTxResult({
+          txid: tx.txid,
+          fee: tx.fee,
+          hex: tx.hex,
+          psbtBase64: tx.psbtBase64,
+          signedOffline: true,
+        });
+        setStep('success');
+        return;
+      }
+
       const txid = await broadcastTx(tx.hex);
       setUsesPending(tx.usesPendingInput);
       // Record the pending transaction before reporting success, so a
@@ -167,6 +238,10 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
         change: tx.change,
         createdAt: Date.now(),
       });
+      // Refresh the offline UTXO cache with the post-broadcast
+      // state (spent inputs now locked, change pending), so a
+      // later offline send does not reuse them.
+      void loadSpendableUtxos().catch(() => {});
       setTxResult({ txid, fee: tx.fee });
       setStep('success');
     } catch (err) {
@@ -174,6 +249,30 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
       setError(msg);
       setStep('confirm');
     }
+  };
+
+  // Copy / download helpers for the offline-signed export. Both
+  // artefacts are public signed data (hex and PSBT); sharing them
+  // cannot move funds by itself — only broadcasting can.
+  const copyExport = async (kind: 'hex' | 'psbt', text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(kind);
+      setTimeout(() => setCopied(null), 2000);
+    } catch {
+      // Clipboard unavailable (permissions, non-secure context):
+      // the text stays selectable in the field below.
+    }
+  };
+
+  const downloadExport = (filename: string, text: string) => {
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
 
   if (step === 'success' && txResult) {
@@ -184,7 +283,21 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h2 className="text-2xl font-bold">Sent!</h2>
+        <h2 className="text-2xl font-bold">{txResult.signedOffline ? 'Signed!' : 'Sent!'}</h2>
+        {txResult.signedOffline && (
+          <div className="card bg-yellow-500/10 border border-yellow-600/40 text-left">
+            <p className="text-yellow-300 text-sm font-medium">
+              Signed — not broadcast yet
+            </p>
+            <p className="text-dark-300 text-sm mt-1">
+              This transaction is fully signed and saved in this
+              browser, but it has not been sent to the network. Share
+              the signed hex or PSBT below with a broadcaster, or
+              broadcast it later from the Wallet screen when back
+              online.
+            </p>
+          </div>
+        )}
         <div className="card text-left space-y-3">
           <div>
             <p className="text-dark-400 text-xs">Amount</p>
@@ -204,6 +317,68 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
             </p>
           )}
         </div>
+        {txResult.signedOffline && txResult.hex && txResult.psbtBase64 && (
+          <div className="space-y-4 text-left">
+            <div>
+              <p className="text-dark-400 text-xs mb-1">Signed raw hex</p>
+              <textarea
+                readOnly
+                rows={4}
+                value={txResult.hex}
+                className="input-field font-mono text-xs break-all"
+                onFocus={(e) => e.target.select()}
+              />
+              <div className="flex gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => void copyExport('hex', txResult.hex!)}
+                  className="btn-secondary flex-1"
+                >
+                  {copied === 'hex' ? 'Copied!' : 'Copy hex'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => downloadExport(`nux-signed-${txResult.txid}.txt`, txResult.hex!)}
+                  className="btn-secondary flex-1"
+                >
+                  Download .txt
+                </button>
+              </div>
+            </div>
+            <div>
+              <p className="text-dark-400 text-xs mb-1">Signed PSBT (base64)</p>
+              <textarea
+                readOnly
+                rows={4}
+                value={txResult.psbtBase64}
+                className="input-field font-mono text-xs break-all"
+                onFocus={(e) => e.target.select()}
+              />
+              <div className="flex gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => void copyExport('psbt', txResult.psbtBase64!)}
+                  className="btn-secondary flex-1"
+                >
+                  {copied === 'psbt' ? 'Copied!' : 'Copy PSBT'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => downloadExport(`nux-signed-${txResult.txid}.psbt`, txResult.psbtBase64!)}
+                  className="btn-secondary flex-1"
+                >
+                  Download .psbt
+                </button>
+              </div>
+            </div>
+            <p className="text-dark-400 text-xs">
+              Before broadcasting, check that every input is still
+              unspent (electrs /tx/:txid/outspend/:vout). If an input
+              is already spent, discard the signed transaction and
+              build a new one.
+            </p>
+          </div>
+        )}
         <button onClick={onDone} className="btn-primary w-full">
           Done
         </button>
@@ -239,6 +414,17 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
           </div>
         )}
 
+        {offlineMode && (
+          <div className="card bg-yellow-500/10 border border-yellow-600/40">
+            <p className="text-yellow-300 text-sm">
+              Offline signing: this transaction will be signed and
+              saved in this browser, but not broadcast. Export the
+              signed hex or PSBT to a broadcaster, or broadcast it
+              later from the Wallet screen.
+            </p>
+          </div>
+        )}
+
         <div className="flex gap-3">
           <button
             onClick={() => setStep('form')}
@@ -252,7 +438,7 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
             className="btn-primary flex-1"
             disabled={step === 'sending'}
           >
-            {step === 'sending' ? 'Sending...' : 'Confirm & Send'}
+            {step === 'sending' ? 'Signing...' : offlineMode ? 'Confirm & Sign offline' : 'Confirm & Send'}
           </button>
         </div>
       </div>
@@ -370,6 +556,15 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
               disabled={migration}
             />
             Send all (sweep): spend the full available balance minus the fee, with no change output.
+          </label>
+          <label className="flex items-center gap-2 mt-3 text-sm text-dark-300">
+            <input
+              type="checkbox"
+              checked={offlineMode}
+              onChange={(e) => setOfflineMode(e.target.checked)}
+              disabled={migration}
+            />
+            Sign offline: save the signed transaction without broadcasting, to share with a broadcaster.
           </label>
         </div>
         <button type="submit" disabled={!isValidForm} className="btn-primary w-full">

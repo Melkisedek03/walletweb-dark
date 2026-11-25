@@ -12,6 +12,8 @@ interface HistoryRow {
   outgoing: number;
   timestamp: number;
   confirmed: boolean;
+  // Signed offline but not broadcast yet (from the local ledger).
+  signed?: boolean;
 }
 
 function formatTime(timestamp: number): string {
@@ -50,6 +52,7 @@ export function History({ address }: HistoryProps) {
             outgoing: pending.spent.reduce((sum, sp) => sum + sp.value, 0),
             timestamp: Math.floor(pending.createdAt / 1000),
             confirmed: false,
+            signed: pending.status === 'signed',
           });
         }
         const rows: HistoryRow[] = data.map((tx) => {
@@ -139,7 +142,9 @@ export function History({ address }: HistoryProps) {
                     <p className="font-medium text-sm">
                       {isReceived ? 'Received' : 'Sent'}
                       {!tx.confirmed && (
-                        <span className="ml-2 text-xs text-yellow-300">Pending</span>
+                        <span className="ml-2 text-xs text-yellow-300">
+                          {tx.signed ? 'Signed — not broadcast' : 'Pending'}
+                        </span>
                       )}
                     </p>
                     <p className="text-dark-500 text-xs">
