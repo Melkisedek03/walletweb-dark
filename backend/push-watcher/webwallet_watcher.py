@@ -515,7 +515,7 @@ def send_push(endpoint, address, txid, amount_nusan=None):
         messaging.send(messaging.Message(
             token=token,
             webpush=messaging.WebpushConfig(
-                notification=messaging.Notification(
+                notification=messaging.WebpushNotification(
                     title="Incoming NUX",
                     body=body,
                 ),
