@@ -3,10 +3,12 @@
 @tailwind utilities;
 
 /* Plus Jakarta Sans, self-hosted as a single variable font (weight
-   axis 200-800). No webfont is ever fetched from a CDN: the wallet
-   makes no external requests. The font ships under the SIL Open Font
-   License 1.1; see assets/fonts/OFL.txt. It supports tabular figures
-   (tnum), used by the .num utility below for amounts. */
+   axis 200-800). No webfont is ever fetched from a CDN. The only
+   runtime request to a third-party host is the optional fiat-rate
+   lookup (see lib/rate.ts), which carries no wallet data. The font
+   ships under the SIL Open Font License 1.1; see assets/fonts/OFL.txt.
+   It supports tabular figures (tnum), used by the .num utility below
+   for amounts. */
 @font-face {
   font-family: 'Plus Jakarta Sans';
   src: url('./assets/fonts/plus-jakarta-sans-variable.woff2') format('woff2');
@@ -135,6 +137,20 @@
     background-color: var(--btn-primary-bg-hover);
   }
 
+  /* Glowing green variant of the primary button, used for Send on
+     the dashboard so it stands out from Receive. Same emerald
+     gradient as the balance hero, in both themes. */
+  .btn-primary-glow {
+    background: linear-gradient(150deg, #0f6e0c 0%, #03a103 55%, #0ee90e 130%);
+    color: #ffffff;
+    box-shadow: 0 10px 24px rgba(3, 161, 3, 0.45);
+  }
+
+  .btn-primary-glow:hover:not(:disabled) {
+    background: linear-gradient(150deg, #0f6e0c 0%, #03a103 55%, #0ee90e 130%);
+    filter: brightness(1.08);
+  }
+
   .btn-legacy {
     @apply bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
   }
@@ -192,6 +208,12 @@
     color: var(--hero-muted);
   }
 
+  /* Fiat value of the total balance, under the hero value. */
+  .hero-rate {
+    @apply text-sm mt-2;
+    color: var(--hero-muted);
+  }
+
   .hero-pills {
     @apply flex gap-2 mt-4;
   }
@@ -207,6 +229,46 @@
     color: var(--hero-text);
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum";
+  }
+
+  /* Live-status dot in the hero pills: a glowing dot with a slow
+     expanding ring. Confirmed is green, Pending amber. With reduced
+     motion preferred the ring is off and the dot stays static. */
+  .hero-dot {
+    --dot-color: #4ade80;
+    --dot-pulse: rgba(74, 222, 128, 0.55);
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 9999px;
+    margin-right: 6px;
+    vertical-align: middle;
+    background: var(--dot-color);
+    box-shadow: 0 0 8px 2px var(--dot-pulse);
+    animation: hero-dot-pulse 2.4s ease-out infinite;
+  }
+
+  .hero-dot-pending {
+    --dot-color: #fbbf24;
+    --dot-pulse: rgba(251, 191, 36, 0.55);
+  }
+
+  @keyframes hero-dot-pulse {
+    0% {
+      box-shadow: 0 0 8px 2px var(--dot-pulse), 0 0 0 0 var(--dot-pulse);
+    }
+    70% {
+      box-shadow: 0 0 8px 2px var(--dot-pulse), 0 0 0 6px transparent;
+    }
+    100% {
+      box-shadow: 0 0 8px 2px var(--dot-pulse), 0 0 0 0 transparent;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero-dot {
+      animation: none;
+    }
   }
 
   .hero-note {
