@@ -1,0 +1,20 @@
+[Unit]
+Description=Nusacoin web wallet push subscription service (browser <-> watcher)
+After=network.target
+
+[Service]
+Type=simple
+User=webpush
+Group=webpush
+WorkingDirectory=/opt/webwallet-push
+# Localhost only: subscriptions are per-device data. Expose /api/*
+# publicly through a reverse proxy, never this port directly.
+Environment=BIND_HOST=127.0.0.1
+Environment=BIND_PORT=8085
+Environment=DB_PATH=/opt/webwallet-push/subscriptions.db
+ExecStart=/usr/bin/python3 /opt/webwallet-push/webpush_mapping.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
