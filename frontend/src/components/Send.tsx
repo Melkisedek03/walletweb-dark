@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { buildTransaction, estimateSize, fetchUtxos, nuxToNusan, nusanToNux, toUtxo, type UTXO } from '../lib/transaction';
 import { broadcastTx, fetchOwnMempoolUtxos, type AddressBalance } from '../lib/electrs';
 import { getLockedOutpoints, getPendingTxs, getPendingUtxos, addPendingTx } from '../lib/pending';
+import { cacheSpendableUtxos } from '../lib/utxocache';
 import { COIN, DEFAULT_FEE_RATE } from '../lib/network';
 import {
   searchAddressBook,
@@ -112,7 +113,12 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
       [...available, ...pending].map((u) => `${u.txid}:${u.outputIndex}`),
     );
     const extra = ownMempool.filter((u) => !seen.has(`${u.txid}:${u.outputIndex}`));
-    return [...available, ...pending, ...extra];
+    const spendable = [...available, ...pending, ...extra];
+    // Keep the offline UTXO cache fresh while online, so the send
+    // form can build and sign from it when the network is gone.
+    // Fire-and-forget: a cache failure must never block sending.
+    void cacheSpendableUtxos(sender, isBech32, spendable);
+    return spendable;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -167,6 +173,10 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
         change: tx.change,
         createdAt: Date.now(),
       });
+      // Refresh the offline UTXO cache with the post-broadcast
+      // state (spent inputs now locked, change pending), so a
+      // later offline send does not reuse them.
+      void loadSpendableUtxos().catch(() => {});
       setTxResult({ txid, fee: tx.fee });
       setStep('success');
     } catch (err) {
