@@ -2,7 +2,7 @@ import { Psbt, Transaction, payments } from 'bitcoinjs-lib';
 import ECPairFactory, { type ECPairAPI } from 'ecpair';
 import * as ecc from 'tiny-secp256k1';
 import { Buffer } from 'buffer';
-import { nusacoin, COIN, DEFAULT_FEE_RATE } from './network';
+import { nusacoin, COIN, DEFAULT_FEE_RATE, DUST_NUSAN } from './network';
 import { fetchUtxos as fetchElectrsUtxos, fetchTxHex } from './electrs';
 import type { PendingUtxo } from './pending';
 
@@ -51,8 +51,9 @@ function isBech32Address(address: string): boolean {
   return address.startsWith('nu1');
 }
 
-// Size estimates in bytes (vbytes for witness data).
-function estimateSize(
+// Size estimates in bytes (vbytes for witness data). Exported so the
+// send form can show an estimated fee before broadcasting a sweep.
+export function estimateSize(
   inputs: Array<{ isBech32: boolean }>,
   outputs: string[],
 ): number {
@@ -121,7 +122,7 @@ export async function buildTransaction(params: {
     totalInput = sorted.reduce((sum, u) => sum + u.satoshis, 0);
     fee = estimateSize(selected.map(() => inputKind), [toAddress]) * feeRate;
     payment = totalInput - fee;
-    if (payment <= 546) {
+    if (payment <= DUST_NUSAN) {
       throw new Error('Insufficient funds to sweep after fees');
     }
   } else {
@@ -144,7 +145,7 @@ export async function buildTransaction(params: {
   let changeValue = 0;
   if (!sweep) {
     changeValue = totalInput - amountNusan - fee;
-    if (changeValue <= 546) {
+    if (changeValue <= DUST_NUSAN) {
       // Dust change is absorbed into the fee; no change output.
       fee = totalInput - amountNusan;
       changeValue = 0;

@@ -28,6 +28,11 @@ export const COIN = 100_000_000;
 export const MIN_FEE_RATE = 1;
 export const DEFAULT_FEE_RATE = 3;
 
+// Dust threshold (nusan): outputs at or below this value are not
+// relayed, so change at or below it is absorbed into the fee and a
+// sweep must leave more than this after fees.
+export const DUST_NUSAN = 546;
+
 // Same-origin electrs proxy (nginx /electrs/). No other data source
 // is used by the frontend after Phase 2.
 export const ELECTRS_BASE = '/electrs';
