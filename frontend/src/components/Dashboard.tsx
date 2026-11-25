@@ -1,5 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { nusanToNux } from '../lib/transaction';
+import { COIN } from '../lib/network';
+import { fetchNuxIdrRate, formatIdr } from '../lib/rate';
 import type { AddressBalance } from '../lib/electrs';
 import { useIncomingNotice } from '../hooks/useIncomingNotice';
 
@@ -16,10 +18,22 @@ interface DashboardProps {
 }
 
 export function Dashboard({ bech32address, balance, onInit, onRefresh, onSend, onReceive, onAddressBook }: DashboardProps) {
+  // Fiat rate (NUX/IDR). Null until a price is fetched; the fiat
+  // line simply stays hidden while it is null, so a missing rate
+  // never blocks anything.
+  const [rate, setRate] = useState<number | null>(null);
+
   useEffect(() => {
+    const loadRate = () => {
+      void fetchNuxIdrRate().then(setRate);
+    };
+    loadRate();
     onInit();
     onRefresh();
-    const interval = setInterval(onRefresh, 30000); // Refresh every 30s
+    const interval = setInterval(() => {
+      onRefresh();
+      loadRate(); // Cheap: the rate module caches for five minutes.
+    }, 30000); // Refresh every 30s
     return () => clearInterval(interval);
   }, [onRefresh]);
 
@@ -51,6 +65,11 @@ export function Dashboard({ bech32address, balance, onInit, onRefresh, onSend, o
           {balancenux}
           <span className="hero-unit">NUX</span>
         </h2>
+        {/* Fiat value of the displayed total balance. Hidden while
+            no rate is available (offline or fetch failure). */}
+        {rate !== null && balance && (
+          <p className="hero-rate num">≈ {formatIdr((balance.available / COIN) * rate)}</p>
+        )}
         {balance && (
           <div className="hero-pills">
             <div className="hero-pill"><span className="hero-dot" aria-hidden="true" />Confirmed<b>{confirmedNux} NUX</b></div>

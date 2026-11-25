@@ -3,10 +3,12 @@
 @tailwind utilities;
 
 /* Plus Jakarta Sans, self-hosted as a single variable font (weight
-   axis 200-800). No webfont is ever fetched from a CDN: the wallet
-   makes no external requests. The font ships under the SIL Open Font
-   License 1.1; see assets/fonts/OFL.txt. It supports tabular figures
-   (tnum), used by the .num utility below for amounts. */
+   axis 200-800). No webfont is ever fetched from a CDN. The only
+   runtime request to a third-party host is the optional fiat-rate
+   lookup (see lib/rate.ts), which carries no wallet data. The font
+   ships under the SIL Open Font License 1.1; see assets/fonts/OFL.txt.
+   It supports tabular figures (tnum), used by the .num utility below
+   for amounts. */
 @font-face {
   font-family: 'Plus Jakarta Sans';
   src: url('./assets/fonts/plus-jakarta-sans-variable.woff2') format('woff2');
@@ -203,6 +205,12 @@
 
   .hero-unit {
     @apply text-lg ml-2;
+    color: var(--hero-muted);
+  }
+
+  /* Fiat value of the total balance, under the hero value. */
+  .hero-rate {
+    @apply text-sm mt-2;
     color: var(--hero-muted);
   }
 
