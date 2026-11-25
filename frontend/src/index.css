@@ -120,9 +120,16 @@
 }
 
 @layer base {
+  /* No pull-to-refresh or vertical overscroll glow/bounce: an
+     installed wallet must not reload on an accidental pull. */
+  html {
+    overscroll-behavior-y: none;
+  }
+
   body {
     @apply bg-dark-950 text-gray-100 antialiased;
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overscroll-behavior-y: none;
     /* App-like feel: no iOS long-press callout, and no text
        selection outside editable fields (the context menu itself
        is disabled in App.tsx). */
