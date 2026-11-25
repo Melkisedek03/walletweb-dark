@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { fetchAddressTxs, type ElectrsTx } from '../lib/electrs';
-import { getPendingTxs } from '../lib/pending';
+import { getPendingTxs, type PendingTx } from '../lib/pending';
+import { TxDetailDialog } from './TxDetailDialog';
 
 interface HistoryProps {
   address: string;
 }
 
-interface HistoryRow {
+export interface HistoryRow {
   txid: string;
   incoming: number;
   outgoing: number;
@@ -16,7 +17,7 @@ interface HistoryRow {
   signed?: boolean;
 }
 
-function formatTime(timestamp: number): string {
+export function formatTime(timestamp: number): string {
   if (!timestamp) return 'Pending';
   const date = new Date(timestamp * 1000);
   return date.toLocaleDateString(undefined, {
@@ -31,6 +32,11 @@ function formatTime(timestamp: number): string {
 
 export function History({ address }: HistoryProps) {
   const [txs, setTxs] = useState<HistoryRow[]>([]);
+  // Full transactions behind each row, for the detail dialog: the
+  // dialog reuses this already-fetched data instead of refetching.
+  const [txById, setTxById] = useState<Map<string, ElectrsTx>>(new Map());
+  const [pendingById, setPendingById] = useState<Map<string, PendingTx>>(new Map());
+  const [selectedTxid, setSelectedTxid] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,6 +49,10 @@ export function History({ address }: HistoryProps) {
         const data: ElectrsTx[] = await fetchAddressTxs(address);
         if (cancelled) return;
         const known = new Set(data.map((t) => t.txid));
+        const txMap = new Map<string, ElectrsTx>();
+        for (const tx of data) txMap.set(tx.txid, tx);
+        const pendingMap = new Map<string, PendingTx>();
+        for (const pending of getPendingTxs(address)) pendingMap.set(pending.txid, pending);
         const ledgerRows: HistoryRow[] = [];
         for (const pending of getPendingTxs(address)) {
           if (known.has(pending.txid)) continue;
@@ -73,6 +83,8 @@ export function History({ address }: HistoryProps) {
           };
         });
         setTxs([...ledgerRows, ...rows]);
+        setTxById(txMap);
+        setPendingById(pendingMap);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load history');
@@ -120,7 +132,19 @@ export function History({ address }: HistoryProps) {
             const amount = isReceived ? tx.incoming - tx.outgoing : tx.outgoing - tx.incoming;
 
             return (
-              <div key={tx.txid} className="card flex items-center justify-between py-4">
+              <div
+                key={tx.txid}
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelectedTxid(tx.txid)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setSelectedTxid(tx.txid);
+                  }
+                }}
+                className="card flex items-center justify-between py-4 w-full text-left cursor-pointer hover:border-nux-500 transition-colors"
+              >
                 <div className="flex items-center gap-3">
                   <div
                     className={`w-10 h-10 rounded-full flex items-center justify-center ${isReceived
@@ -151,7 +175,7 @@ export function History({ address }: HistoryProps) {
                       {formatTime(tx.timestamp)}
                     </p>
                     <p className="text-dark-400 text-xs">
-                      <a href={`https://book.taobot.org/tx/${tx.txid}`} target="_blank" className="text-inherit hover:text-nux-400 transition-colors">{tx.txid.slice(8, 28)}...</a>
+                      {tx.txid.slice(8, 28)}...
                     </p>
                   </div>
                 </div>
@@ -170,6 +194,19 @@ export function History({ address }: HistoryProps) {
           })}
         </div>
       )}
+      {selectedTxid && (() => {
+        const selected = txs.find((t) => t.txid === selectedTxid);
+        if (!selected) return null;
+        return (
+          <TxDetailDialog
+            row={selected}
+            tx={txById.get(selectedTxid)}
+            pending={pendingById.get(selectedTxid)}
+            ownAddress={address}
+            onClose={() => setSelectedTxid(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
