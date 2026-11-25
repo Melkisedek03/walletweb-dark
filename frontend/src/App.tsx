@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Layout } from './components/Layout';
 import logoImg from './assets/logo.png';
 import { CreateWallet } from './components/CreateWallet';
@@ -16,6 +16,16 @@ import { applyTheme, getStoredTheme, type Theme } from './lib/theme';
 
 function App() {
   const wallet = useWallet();
+
+  // The wallet is used as an installed app, so the browser's native
+  // context menu is disabled everywhere: right-click on desktop, and
+  // on Android a long press fires the same event. This is UX polish
+  // for an app-like feel, not a security boundary.
+  useEffect(() => {
+    const preventContextMenu = (event: Event) => event.preventDefault();
+    document.addEventListener('contextmenu', preventContextMenu);
+    return () => document.removeEventListener('contextmenu', preventContextMenu);
+  }, []);
 
   // Visual theme only; the toggle lives in the header and works on
   // every screen, including unlock (before any wallet is loaded).

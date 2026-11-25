@@ -123,6 +123,18 @@
   body {
     @apply bg-dark-950 text-gray-100 antialiased;
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    /* App-like feel: no iOS long-press callout, and no text
+       selection outside editable fields (the context menu itself
+       is disabled in App.tsx). */
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* Editable fields stay fully selectable and editable. */
+  input, textarea {
+    user-select: text;
+    -webkit-user-select: text;
   }
 }
 
