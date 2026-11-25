@@ -53,8 +53,8 @@ export function Dashboard({ bech32address, balance, onInit, onRefresh, onSend, o
         </h2>
         {balance && (
           <div className="hero-pills">
-            <div className="hero-pill">Confirmed<b>{confirmedNux} NUX</b></div>
-            <div className="hero-pill">Pending<b>{pendingNux} NUX</b></div>
+            <div className="hero-pill"><span className="hero-dot" aria-hidden="true" />Confirmed<b>{confirmedNux} NUX</b></div>
+            <div className="hero-pill"><span className="hero-dot hero-dot-pending" aria-hidden="true" />Pending<b>{pendingNux} NUX</b></div>
           </div>
         )}
         {balance && balance.received > 0 && (
@@ -64,19 +64,18 @@ export function Dashboard({ bech32address, balance, onInit, onRefresh, onSend, o
         )}
       </div>
 
-      {/* Address Book: kept off the top navigation so the nav bar
-          stays within narrow phone screens without horizontal scroll,
-          and placed here, directly below the Balance card. */}
-      <button onClick={onAddressBook} className="btn-secondary w-full text-center py-4">
-        Address Book
-      </button>
-
       {/* Quick Actions */}
       <div className="grid grid-cols-2 gap-4">
-        <button onClick={onSend} className="btn-primary text-center py-4 rounded-full">
+        <button onClick={onSend} className="btn-primary btn-primary-glow flex items-center justify-center gap-2 py-4 rounded-full">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+          </svg>
           Send
         </button>
-        <button onClick={onReceive} className="btn-secondary text-center py-4 rounded-full">
+        <button onClick={onReceive} className="btn-secondary flex items-center justify-center gap-2 py-4 rounded-full">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+          </svg>
           Receive
         </button>
       </div>
@@ -92,6 +91,14 @@ export function Dashboard({ bech32address, balance, onInit, onRefresh, onSend, o
           Copy address
         </button>
       </div>
+
+      {/* Address Book: kept off the top navigation so the nav bar
+          stays within narrow phone screens without horizontal scroll,
+          and placed here, at the bottom of the Wallet screen, below
+          the address card. */}
+      <button onClick={onAddressBook} className="btn-secondary w-full text-center py-4">
+        Address Book
+      </button>
     </div>
   );
 }
