@@ -74,7 +74,7 @@ self.addEventListener('push', (event) => {
     self.registration.showNotification(notification.title, {
       body: typeof notification.body === 'string' ? notification.body : '',
       icon: '/icons/icon-192.png',
-      badge: '/icons/icon-192.png',
+      badge: '/icons/badge-96.png',
       // The tag collapses repeat notifications for one transaction.
       tag: txid ? `nux-incoming-${txid}` : 'nux-incoming',
       data: { txid, url: '/' },
