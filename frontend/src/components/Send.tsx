@@ -58,6 +58,11 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
   // or PSBT can be shared with a broadcaster. Not available in
   // migration mode: the one-time legacy move broadcasts at once.
   const [offlineMode, setOfflineMode] = useState(false);
+  // BIP 125 opt-in RBF, off by default: nothing changes unless the
+  // user opts in. The toggle works in normal and sweep mode, for
+  // legacy and bech32 sends; the exported PSBT simply carries the
+  // sequence when it is on.
+  const [rbf, setRbf] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [txResult, setTxResult] = useState<{
     txid: string;
@@ -195,6 +200,7 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
         isBech32,
         utxos,
         sweep,
+        rbf,
       });
 
       if (offline) {
@@ -400,6 +406,12 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
             <p className="text-dark-400 text-xs">Amount</p>
             <p className="text-xl font-bold num">{sweep ? 'All available (sweep)' : `${amount} NUX`}</p>
           </div>
+          {rbf && (
+            <div>
+              <p className="text-dark-400 text-xs">Replace-By-Fee</p>
+              <p className="font-mono text-sm">Enabled — this transaction can be replaced later with a higher fee.</p>
+            </div>
+          )}
           {sweep && estimatedFee !== null && (
             <div>
               <p className="text-dark-400 text-xs">Estimated fee</p>
@@ -518,7 +530,17 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
           </label>
           <div className="relative">
             <input
-              type="number"
+              // Text input, not number: with type="number" Chrome
+              // reports invalid input (e.g. "--9794664" typed from a
+              // mobile keyboard, which bypasses key down) as an empty
+              // value, so React never rewrites the field and the
+              // invalid text stays visible. With type="text" the
+              // typed text reaches sanitizeAmount and the display
+              // updates. inputMode="decimal" keeps the numeric
+              // keyboard on mobile. Validation stays with
+              // isValidForm (amount > 0 and <= available).
+              type="text"
+              inputMode="decimal"
               className="input-field pr-16"
               placeholder="0.00"
               value={sweep ? maxAmount.toFixed(8) : amount}
@@ -533,9 +555,6 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
                 const pasted = sanitizeAmount(e.clipboardData.getData('text'));
                 if (pasted) setAmount(pasted);
               }}
-              step="0.00000001"
-              min="0.00000001"
-              max={maxAmount}
             />
             <button
               type="button"
@@ -565,6 +584,14 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
               disabled={migration}
             />
             Sign offline: save the signed transaction without broadcasting, to share with a broadcaster.
+          </label>
+          <label className="flex items-center gap-2 mt-3 text-sm text-dark-300">
+            <input
+              type="checkbox"
+              checked={rbf}
+              onChange={(e) => setRbf(e.target.checked)}
+            />
+            Enable RBF (Replace-By-Fee): mark this transaction as replaceable, so it can later be replaced by a version with a higher fee.
           </label>
         </div>
         <button type="submit" disabled={!isValidForm} className="btn-primary w-full">
