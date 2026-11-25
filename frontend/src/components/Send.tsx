@@ -24,14 +24,32 @@ interface SendProps {
   // below and sweep on, and the recipient cannot be changed. Used
   // for the one-time legacy to bech32 move.
   migrationTo?: string;
+  // Address book shortcut: the form starts with the recipient
+  // pre-filled with this address, but it stays editable. Takes
+  // effect only when migrationTo is not set.
+  prefillTo?: string;
 }
 
 type SendStep = 'form' | 'confirm' | 'sending' | 'success';
 
-export function Send({ address, bech32address, privateKey, privateKeyBech32, balance, balanceBech32, isBech32, onDone, onAddressBook, migrationTo }: SendProps) {
+// Amount input guard: only digits and one decimal separator may be
+// entered. A comma typed as the decimal separator is normalized to a
+// dot, and any minus sign or other stray character is dropped. This
+// is the second layer of the guard; the first layer blocks invalid
+// keys on key down. The sanitize also covers mobile keyboards and
+// autofill, which do not always produce key events.
+function sanitizeAmount(raw: string): string {
+  const dotted = raw.replace(/,/g, '.');
+  const cleaned = dotted.replace(/[^0-9.]/g, '');
+  const dot = cleaned.indexOf('.');
+  if (dot === -1) return cleaned;
+  return cleaned.slice(0, dot + 1) + cleaned.slice(dot + 1).replace(/\./g, '');
+}
+
+export function Send({ address, bech32address, privateKey, privateKeyBech32, balance, balanceBech32, isBech32, onDone, onAddressBook, migrationTo, prefillTo }: SendProps) {
   const migration = !!migrationTo;
   const [step, setStep] = useState<SendStep>('form');
-  const [toAddress, setToAddress] = useState(migrationTo ?? '');
+  const [toAddress, setToAddress] = useState(migrationTo ?? prefillTo ?? '');
   const [amount, setAmount] = useState('');
   const [sweep, setSweep] = useState(migration);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +67,23 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
   const isValidForm =
     isValidNusacoinAddress(toAddress) &&
     (sweep || (parseFloat(amount) > 0 && parseFloat(amount) <= maxAmount));
+
+  // First layer of the amount input guard: reject any key that cannot
+  // be part of a plain decimal amount ('-', '+', 'e', letters, ...).
+  // Editing and navigation keys stay allowed, as do keyboard
+  // shortcuts (copy, paste, select all). The decimal separator is
+  // allowed and normalized to '.' by sanitizeAmount on change.
+  const handleAmountKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (
+      e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Tab' ||
+      e.key === 'Enter' || e.key === 'Home' || e.key === 'End' ||
+      e.key.startsWith('Arrow')
+    ) return;
+    if (/^[0-9]$/.test(e.key)) return;
+    if (e.key === '.' || e.key === ',') return;
+    e.preventDefault();
+  };
 
   async function loadSpendableUtxos(): Promise<UTXO[]> {
     const sender = isBech32 ? bech32address : address;
@@ -302,7 +337,16 @@ export function Send({ address, bech32address, privateKey, privateKeyBech32, bal
               placeholder="0.00"
               value={sweep ? maxAmount.toFixed(8) : amount}
               readOnly={sweep}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => setAmount(sanitizeAmount(e.target.value))}
+              onKeyDown={handleAmountKeyDown}
+              onPaste={(e) => {
+                // Paste bypasses key presses, so sanitize the clipboard
+                // text directly. A paste that sanitizes to nothing
+                // leaves the current amount untouched.
+                e.preventDefault();
+                const pasted = sanitizeAmount(e.clipboardData.getData('text'));
+                if (pasted) setAmount(pasted);
+              }}
               step="0.00000001"
               min="0.00000001"
               max={maxAmount}

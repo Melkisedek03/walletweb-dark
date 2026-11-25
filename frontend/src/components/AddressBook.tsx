@@ -10,9 +10,12 @@ import {
 
 interface AddressBookProps {
   onBack: () => void;
+  // Opens the Send view with the recipient pre-filled with the
+  // chosen address. Optional so the view stays usable standalone.
+  onSend?: (address: string) => void;
 }
 
-export function AddressBook({ onBack }: AddressBookProps) {
+export function AddressBook({ onBack, onSend }: AddressBookProps) {
   const [query, setQuery] = useState('');
   const [entries, setEntries] = useState<AddressBookEntry[]>(() => getAddressBookEntries());
   const [label, setLabel] = useState('');
@@ -146,6 +149,11 @@ export function AddressBook({ onBack }: AddressBookProps) {
                 <p className="font-medium">{entry.label}</p>
                 <p className="font-mono text-sm break-all text-dark-300">{entry.address}</p>
                 <div className="flex gap-3">
+                  {onSend && (
+                    <button onClick={() => onSend(entry.address)} className="btn-primary flex-1">
+                      Send
+                    </button>
+                  )}
                   <button onClick={() => startEdit(entry)} className="btn-secondary flex-1">
                     Edit
                   </button>
