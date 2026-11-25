@@ -3,14 +3,18 @@
 
 Watches NUX addresses over the Electrum protocol
 (`blockchain.scripthash.subscribe`) against the Nusacoin electrs, and sends
-an FCM Web Push message through Firebase Admin whenever a new transaction
+a standard Web Push message (pywebpush) whenever a new transaction
 pays a watched address (including unconfirmed/mempool transactions).
 
 Address -> endpoint mapping source: the subscription service that stores
 the `POST /api/webpush/subscribe` payloads from the web wallet's opt-in
 Notifications toggle (see webpush_mapping.py). Expected shape:
 
-    {"<push endpoint>": ["<address>", ...], ...}
+    {"<push endpoint>": {"addresses": ["<address>", ...],
+                         "keys": {"p256dh": "...", "auth": "..."}}, ...}
+
+The legacy list shape {"<endpoint>": ["<address>", ...]} is still
+accepted (keys unknown: those endpoints are skipped at send time).
 
 For local testing without the service, point MAPPING_FILE at a JSON file
 with the same shape instead.
@@ -22,16 +26,21 @@ both required by the web wallet:
      is detected server-side and skipped: every input's parent
      transaction is fetched and checked for an output paying the
      watched scripthash.
-  2. Sends use the FCM Web Push form (Message with webpush config and
-     a mandatory `notification` field) addressed to the FCM token
-     taken from the subscription endpoint URL. A data-only payload
-     displays nothing in a browser, so the notification field is not
-     optional.
+  2. Sends use the standard Web Push protocol (pywebpush), not
+     firebase-admin: the raw subscription endpoint URL is NOT an FCM
+     registration token, so firebase-admin could never address it.
+     The encrypted payload is one JSON object,
+     {"notification": {"title", "body"}, "data": {...}}, exactly what
+     the wallet's service worker parses (see frontend/sw-template.js).
+     A data-only payload displays nothing in a browser, so the
+     notification field is not optional.
 
-Secrets are NEVER committed: Firebase credentials come from the
-GOOGLE_APPLICATION_CREDENTIALS env var (service-account JSON file path).
+Secrets are NEVER committed: the VAPID private key is read from the
+file named by VAPID_PRIVATE_KEY_FILE (one line: the raw base64url
+private key, 43 chars, no padding — NOT a PEM file). The VAPID
+subject claim comes from VAPID_SUBJECT.
 
-Requires: pip install firebase-admin   (stdlib otherwise)
+Requires: pip install pywebpush   (stdlib otherwise)
 """
 
 import hashlib
@@ -43,25 +52,14 @@ import socket
 import threading
 import time
 import urllib.request
-import warnings
 
 try:
-    import firebase_admin
-    from firebase_admin import credentials, messaging
-    HAVE_FCM = True
-    # firebase-admin >= 7.7 deprecates Message(token=...) in favor of
-    # Message(fid=...). But fid is the Firebase *Installation* ID, a
-    # different identifier than the FCM registration token carried in
-    # the push subscription endpoint; migrating would need a different
-    # subscription shape, so we stay on token= (still fully functional)
-    # and silence the warning.
-    warnings.filterwarnings(
-        "ignore", message="Message.token is deprecated")
+    from pywebpush import WebPushException, webpush
+    HAVE_PYWEBPUSH = True
 except ImportError:  # pragma: no cover - allows unit-testing without it
-    firebase_admin = None
-    credentials = None
-    messaging = None
-    HAVE_FCM = False
+    WebPushException = None
+    webpush = None
+    HAVE_PYWEBPUSH = False
 
 # ------------------------------------------------------------------ config
 
@@ -76,9 +74,37 @@ MAPPING_FILE = os.environ.get("MAPPING_FILE", "")
 MAPPING_REFRESH_S = int(os.environ.get("MAPPING_REFRESH_S", "300"))
 
 # The subscription service's stale-cleanup hook: rows are deleted here
-# when FCM reports the endpoint dead.
+# when the push service reports the endpoint dead.
 DELETE_URL = os.environ.get(
     "DELETE_URL", "http://127.0.0.1:8085/internal/webpush/delete")
+
+# VAPID signing for standard Web Push. The private key file holds one
+# line: the raw base64url private key (43 chars, no padding) — NOT a
+# PEM file, so the path itself must never be passed to pywebpush (it
+# would try to read it as PEM); read the string and pass that instead.
+VAPID_PRIVATE_KEY_FILE = os.environ.get(
+    "VAPID_PRIVATE_KEY_FILE",
+    "/opt/webwallet-watcher/vapid-private-key.txt")
+VAPID_SUBJECT = os.environ.get(
+    "VAPID_SUBJECT", "https://dompet.nusacoin.org")
+
+_vapid_key_cache = None
+
+
+def _vapid_key():
+    """Raw base64url VAPID private key string from VAPID_PRIVATE_KEY_FILE.
+
+    Read once and cached; raises OSError / ValueError when the file is
+    missing or empty, so main() can fail fast at startup.
+    """
+    global _vapid_key_cache
+    if _vapid_key_cache is None:
+        with open(VAPID_PRIVATE_KEY_FILE, encoding="utf-8") as fh:
+            _vapid_key_cache = fh.read().strip()
+        if not _vapid_key_cache:
+            raise ValueError("empty VAPID private key file: %s"
+                             % VAPID_PRIVATE_KEY_FILE)
+    return _vapid_key_cache
 
 PING_INTERVAL_S = int(os.environ.get("PING_INTERVAL_S", "120"))
 RECONNECT_BACKOFF_S = (5, 10, 30, 60)
@@ -309,7 +335,13 @@ class ElectrumClient:
 # ---------------------------------------------------------------- watcher
 
 def load_mapping():
-    """Return {endpoint: [address, ...]} from file or service URL."""
+    """Return {endpoint: {"addresses": [...], "keys": {...} | None}}.
+
+    Accepts the current shape (object with addresses + keys) and the
+    legacy list shape {"<endpoint>": ["<address>", ...]} (keys None:
+    those endpoints cannot receive pushes and are skipped at send
+    time). A keys object missing p256dh or auth is treated as None.
+    """
     if MAPPING_FILE:
         with open(MAPPING_FILE, encoding="utf-8") as fh:
             data = json.load(fh)
@@ -320,8 +352,24 @@ def load_mapping():
             data = json.load(resp)
     if not isinstance(data, dict):
         raise ValueError("mapping must be a JSON object")
-    return {str(t): [str(a) for a in addrs]
-            for t, addrs in data.items() if addrs}
+    out = {}
+    for endpoint, value in data.items():
+        endpoint = str(endpoint)
+        if isinstance(value, dict):
+            addrs = [str(a) for a in value.get("addresses") or []]
+            keys = value.get("keys") or None
+            if keys is not None:
+                keys = {"p256dh": str(keys.get("p256dh") or ""),
+                        "auth": str(keys.get("auth") or "")}
+                if not keys["p256dh"] or not keys["auth"]:
+                    keys = None
+        else:
+            # Legacy list shape: addresses only, no keys.
+            addrs = [str(a) for a in value]
+            keys = None
+        if addrs:
+            out[endpoint] = {"addresses": addrs, "keys": keys}
+    return out
 
 
 def _short_addr(address):
@@ -455,19 +503,6 @@ def tx_spends_from(client, txid, scripthash, parent_cache):
     return False
 
 
-def fcm_token_of(endpoint):
-    """FCM registration token carried in a push subscription endpoint.
-
-    Browser endpoints look like https://fcm.googleapis.com/fcm/send/<token>;
-    the token is the last path segment. Empty when the endpoint has no
-    usable token (such endpoints can never receive a push).
-    """
-    token = (endpoint or "").rstrip("/").rsplit("/", 1)[-1]
-    if not token or "://" in token or token == "send":
-        return ""
-    return token
-
-
 def delete_endpoint(endpoint):
     """Ask the subscription service to drop a dead endpoint. Best-effort."""
     try:
@@ -483,21 +518,21 @@ def delete_endpoint(endpoint):
         LOG.warning("stale delete failed for %.20s...: %s", endpoint, exc)
 
 
-def send_push(endpoint, address, txid, amount_nusan=None):
-    """Send an FCM Web Push message for an incoming tx. Never raises.
+def send_push(endpoint, address, txid, amount_nusan=None, keys=None):
+    """Send a standard Web Push message for an incoming tx. Never raises.
 
-    The Web Push form (notification + data) is mandatory: a data-only
-    message is accepted by FCM but displays nothing in a browser.
-    The notification title/body are what the user sees; the txid and
-    amount travel in `data` for the service worker.
+    The payload is one JSON object, {"notification": {...}, "data": ...},
+    exactly what the wallet's service worker parses: the notification
+    title/body are what the user sees; the txid and amount travel in
+    `data` for the service worker. A data-only payload displays nothing
+    in a browser, so the notification field is not optional.
     """
-    token = fcm_token_of(endpoint)
-    if not HAVE_FCM:
-        LOG.warning("HAVE_FCM=false, would push %s -> %.12s...",
+    if not HAVE_PYWEBPUSH:
+        LOG.warning("pywebpush not installed, would push %s -> %.12s...",
                     address, txid)
         return
-    if not token:
-        LOG.warning("no FCM token in endpoint %.20s..., skipping %.12s...",
+    if not keys:
+        LOG.warning("no Web Push keys for endpoint %.20s..., skipping %.12s...",
                     endpoint, txid)
         return
     if amount_nusan:
@@ -511,30 +546,28 @@ def send_push(endpoint, address, txid, amount_nusan=None):
         data = {"type": "incoming_tx",
                 "txid": txid,
                 "address": address}
+    payload = {"notification": {"title": "Incoming NUX", "body": body},
+               "data": data}
     try:
-        messaging.send(messaging.Message(
-            token=token,
-            webpush=messaging.WebpushConfig(
-                notification=messaging.WebpushNotification(
-                    title="Incoming NUX",
-                    body=body,
-                ),
-                data=data,
-            ),
-        ))
+        webpush(
+            subscription_info={"endpoint": endpoint, "keys": keys},
+            data=json.dumps(payload),
+            vapid_private_key=_vapid_key(),
+            vapid_claims={"sub": VAPID_SUBJECT},
+        )
         LOG.info("push sent endpoint=%.20s... addr=%s tx=%.12s...",
                  endpoint, address, txid)
     except Exception as exc:  # noqa: BLE001
-        name = type(exc).__name__
-        if name in ("UnregisteredError", "SenderIdMismatchError"):
+        status = getattr(exc, "status_code", None)
+        if status in (404, 410):
             # The browser uninstalled the app or the subscription
             # expired: drop the row so it is never retried.
-            LOG.warning("dead endpoint %.20s... (%s); deleting it",
-                        endpoint, name)
+            LOG.warning("dead endpoint %.20s... (HTTP %s); deleting it",
+                        endpoint, status)
             delete_endpoint(endpoint)
         else:
             LOG.warning("push failed for %.20s...: %s: %s",
-                        endpoint, name, exc)
+                        endpoint, type(exc).__name__, exc)
 
 
 def sync_history(client, scripthash, state, notify):
@@ -558,14 +591,17 @@ def sync_history(client, scripthash, state, notify):
             amount = get_tx_amount_nusan(client, txid, scripthash)
             for addr in sorted(state["addrs"]):
                 for endpoint in sorted(state["endpoints"]):
-                    send_push(endpoint, addr, txid, amount)
+                    send_push(endpoint, addr, txid, amount,
+                              state.get("keys", {}).get(endpoint))
     state["seen"] = current
 
 
 class Watcher:
     def __init__(self):
         self.client = ElectrumClient(ELECTRS_HOST, ELECTRS_PORT)
-        # scripthash -> {"addrs": set, "endpoints": set, "seen": set(txids)}
+        # scripthash -> {"addrs": set, "endpoints": set,
+        #                "keys": {endpoint: {"p256dh", "auth"}},
+        #                "seen": set(txids)}
         self.watch = {}
 
     def ensure_connected(self):
@@ -589,24 +625,27 @@ class Watcher:
                 time.sleep(wait)
 
     def refresh_mapping(self):
-        """Reload {endpoint: [addresses]}; subscribe new, drop removed."""
+        """Reload {endpoint: {addresses, keys}}; subscribe new, drop removed."""
         try:
             mapping = load_mapping()
         except Exception as exc:  # noqa: BLE001
             LOG.warning("mapping refresh failed: %s", exc)
             return
         wanted = {}
-        for endpoint, addrs in mapping.items():
-            for addr in addrs:
+        for endpoint, sub in mapping.items():
+            for addr in sub["addresses"]:
                 try:
                     sh = scripthash_of(addr)
                 except ValueError as exc:
                     LOG.warning("skipping bad address %r: %s", addr, exc)
                     continue
                 st = wanted.setdefault(
-                    sh, {"addrs": set(), "endpoints": set(), "seen": set()})
+                    sh, {"addrs": set(), "endpoints": set(),
+                         "keys": {}, "seen": set()})
                 st["addrs"].add(addr)
                 st["endpoints"].add(endpoint)
+                if sub["keys"] is not None:
+                    st["keys"][endpoint] = sub["keys"]
         # subscribe newcomers (baseline history, no push spam for old txs)
         new_shs = []
         for sh, st in wanted.items():
@@ -679,16 +718,16 @@ def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)-7s %(message)s")
-    if not HAVE_FCM:
-        LOG.warning("firebase_admin not installed; pushes are logged only "
-                    "(pip install firebase-admin)")
+    if not HAVE_PYWEBPUSH:
+        LOG.warning("pywebpush not installed; pushes are logged only "
+                    "(pip install pywebpush)")
     else:
-        cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
-        if not cred_path:
-            raise SystemExit("set GOOGLE_APPLICATION_CREDENTIALS "
-                             "to the service-account JSON path")
-        firebase_admin.initialize_app(credentials.Certificate(cred_path))
-        LOG.info("firebase admin initialized")
+        try:
+            _vapid_key()
+        except (OSError, ValueError) as exc:
+            raise SystemExit("cannot read VAPID private key file %s: %s"
+                             % (VAPID_PRIVATE_KEY_FILE, exc))
+        LOG.info("VAPID key loaded from %s", VAPID_PRIVATE_KEY_FILE)
     LOG.info("electrs=%s:%d mapping=%s", ELECTRS_HOST, ELECTRS_PORT,
              MAPPING_FILE or MAPPING_URL)
     Watcher().run()

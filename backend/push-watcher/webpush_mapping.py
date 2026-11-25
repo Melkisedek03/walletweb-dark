@@ -8,15 +8,15 @@ webwallet_watcher.py.
 A subscription is one row per push endpoint: the endpoint URL plus the
 Web Push keys (p256dh, auth) and the wallet addresses it watches
 (bech32 + legacy, at most two). The watcher reads the map, subscribes
-the addresses on electrs, and sends an FCM Web Push message when a new
-transaction pays one of them.
+the addresses on electrs, and sends a standard Web Push message
+(pywebpush) when a new transaction pays one of them.
 
 Endpoints (bind localhost only; all routes are prefix-less — in
 production the public /api/webpush/ prefix is stripped by the nginx
 proxy_pass before requests reach this service):
   POST /subscribe    upsert {endpoint, keys: {p256dh, auth}, addresses}
   POST /unsubscribe  delete one subscription by {endpoint}
-  GET  /internal/webpush_subscriptions   {"<endpoint>": ["<address>", ...]} (watcher)
+  GET  /internal/webpush_subscriptions   {"<endpoint>": {"addresses": ["<address>", ...], "keys": {"p256dh": "...", "auth": "..."}}} (watcher)
   POST /internal/webpush/delete  delete one subscription by {endpoint} (stale cleanup)
   GET  /health                   {"ok": true, "subscriptions": N}
 
@@ -121,15 +121,19 @@ def delete_subscription(endpoint):
 
 
 def all_subscriptions():
-    """Return {endpoint: [address, ...]} for rows with addresses."""
+    """Return {endpoint: {"addresses": [...], "keys": {...}}} for rows
+    with addresses. The keys are included so the watcher can send
+    standard Web Push messages; this route is localhost-only."""
     with _db_lock:
         rows = db().execute(
-            "SELECT endpoint, addresses FROM subscriptions").fetchall()
+            "SELECT endpoint, p256dh, auth, addresses FROM subscriptions"
+        ).fetchall()
     out = {}
-    for endpoint, addrs in rows:
+    for endpoint, p256dh, auth, addrs in rows:
         lst = _split_addresses(addrs)
         if lst:
-            out[endpoint] = lst
+            out[endpoint] = {"addresses": lst,
+                             "keys": {"p256dh": p256dh, "auth": auth}}
     return out
 
 

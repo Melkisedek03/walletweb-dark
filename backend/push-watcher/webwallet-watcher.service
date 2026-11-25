@@ -1,19 +1,18 @@
 [Unit]
-Description=Nusacoin web wallet incoming-tx watcher (electrs TCP subscribe -> FCM Web Push)
+Description=Nusacoin web wallet incoming-tx watcher (electrs TCP subscribe -> Web Push)
 After=network.target
 
 [Service]
 Type=simple
 User=webpush
 WorkingDirectory=/opt/webwallet-watcher
-# Firebase service-account JSON (NEVER commit this file anywhere).
-# Use a SEPARATE copy from the PUNDI watcher, so rotating one does
-# not break the other.
-Environment=GOOGLE_APPLICATION_CREDENTIALS=/opt/webwallet-watcher/firebase-service-account.json
+# VAPID private key file (raw base64url, one line; NEVER commit this file).
+# The file is already on this host; keep it readable only by webpush.
+Environment=VAPID_PRIVATE_KEY_FILE=/opt/webwallet-watcher/vapid-private-key.txt
 # electrs Electrum protocol (VPS-local by default)
 Environment=ELECTRS_HOST=127.0.0.1
 Environment=ELECTRS_PORT=50009
-# {push endpoint: [addresses]} from the subscription service.
+# {push endpoint: {addresses, keys}} from the subscription service.
 # Note the port: 8085 is the web-wallet subscription service, not the
 # PUNDI mapping service (8081 in its local copy, 8083 in live nginx).
 Environment=MAPPING_URL=http://127.0.0.1:8085/internal/webpush_subscriptions
