@@ -31,6 +31,12 @@ function App() {
   // every other navigation so a normal send never inherits it.
   const [migration, setMigration] = useState(false);
 
+  // Address book shortcut: when set, the Send view opens with the
+  // recipient pre-filled with this address. Cleared on every other
+  // navigation so a normal send never inherits it. Unlike migration,
+  // the recipient stays editable.
+  const [sendTo, setSendTo] = useState<string | undefined>(undefined);
+
   const isLoggedIn = !!wallet.privateKeyBech32 && !!wallet.privateKey && !!wallet.walletData;
   const navViews = ['dashboard', 'legacy', 'send', 'receive', 'history', 'addressbook'];
 
@@ -130,7 +136,7 @@ function App() {
             isBech32={wallet.trxType}
             onInit={() => { wallet.setBech32(true) }}
             onRefresh={wallet.refreshBalanceBech32}
-            onSend={() => { setMigration(false); wallet.setView('send'); wallet.setBech32(true); }}
+            onSend={() => { setMigration(false); setSendTo(undefined); wallet.setView('send'); wallet.setBech32(true); }}
             onReceive={() => wallet.setView('receive')}
             onAddressBook={() => wallet.setView('addressbook')}
           />
@@ -144,7 +150,7 @@ function App() {
             balance={wallet.balance}
             isBech32={wallet.trxType}
             onRefreshTwo={wallet.refreshBalance}
-            onSend={() => { setMigration(false); wallet.setView('send'); wallet.setBech32(false); }}
+            onSend={() => { setMigration(false); setSendTo(undefined); wallet.setView('send'); wallet.setBech32(false); }}
             onMigrate={() => { setMigration(true); wallet.setView('send'); wallet.setBech32(false); }}
             onHistory={() => { wallet.setBech32(false); wallet.setView('history'); }}
           />
@@ -162,6 +168,7 @@ function App() {
             isBech32={wallet.trxType}
             onDone={() => {
               setMigration(false);
+              setSendTo(undefined);
               wallet.refreshBalance();
               wallet.refreshBalanceBech32();
               wallet.setView('dashboard');
@@ -169,6 +176,7 @@ function App() {
             }}
             onAddressBook={() => wallet.setView('addressbook')}
             migrationTo={migration ? wallet.walletData.bech32address : undefined}
+            prefillTo={sendTo}
           />
         ) : null;
 
@@ -184,7 +192,10 @@ function App() {
 
       case 'addressbook':
         return wallet.walletData ? (
-          <AddressBook onBack={() => wallet.setView('dashboard')} />
+          <AddressBook
+            onBack={() => wallet.setView('dashboard')}
+            onSend={(address) => { setSendTo(address); wallet.setView('send'); }}
+          />
         ) : null;
 
       default:
@@ -199,7 +210,7 @@ function App() {
       onLogout={wallet.handleLogout}
       showNav={isLoggedIn && navViews.includes(wallet.view)}
       activeView={wallet.view}
-      onNavigate={(v) => { setMigration(false); wallet.setView(v as WalletView); }}
+      onNavigate={(v) => { setMigration(false); setSendTo(undefined); wallet.setView(v as WalletView); }}
       theme={theme}
       onToggleTheme={toggleTheme}
     >

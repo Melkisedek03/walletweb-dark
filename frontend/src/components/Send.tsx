@@ -24,6 +24,10 @@ interface SendProps {
   // below and sweep on, and the recipient cannot be changed. Used
   // for the one-time legacy to bech32 move.
   migrationTo?: string;
+  // Address book shortcut: the form starts with the recipient
+  // pre-filled with this address, but it stays editable. Takes
+  // effect only when migrationTo is not set.
+  prefillTo?: string;
 }
 
 type SendStep = 'form' | 'confirm' | 'sending' | 'success';
@@ -42,10 +46,10 @@ function sanitizeAmount(raw: string): string {
   return cleaned.slice(0, dot + 1) + cleaned.slice(dot + 1).replace(/\./g, '');
 }
 
-export function Send({ address, bech32address, privateKey, privateKeyBech32, balance, balanceBech32, isBech32, onDone, onAddressBook, migrationTo }: SendProps) {
+export function Send({ address, bech32address, privateKey, privateKeyBech32, balance, balanceBech32, isBech32, onDone, onAddressBook, migrationTo, prefillTo }: SendProps) {
   const migration = !!migrationTo;
   const [step, setStep] = useState<SendStep>('form');
-  const [toAddress, setToAddress] = useState(migrationTo ?? '');
+  const [toAddress, setToAddress] = useState(migrationTo ?? prefillTo ?? '');
   const [amount, setAmount] = useState('');
   const [sweep, setSweep] = useState(migration);
   const [error, setError] = useState<string | null>(null);
