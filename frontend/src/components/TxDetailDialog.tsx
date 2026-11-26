@@ -90,6 +90,15 @@ export function TxDetailDialog({ row, tx, pending, ownAddress, onClose }: TxDeta
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  // A modal locks the page scroll while it is open: save the
+  // body's previous overflow, hide it, and restore it on close,
+  // so wheel/touch on the backdrop cannot scroll the page behind.
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previous; };
+  }, []);
+
   const status = liveStatus ?? tx?.status ?? null;
   const confirmed = status?.confirmed ?? false;
   const confirmations =
@@ -106,13 +115,13 @@ export function TxDetailDialog({ row, tx, pending, ownAddress, onClose }: TxDeta
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Transaction details"
     >
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="card relative w-full max-w-lg max-h-[85vh] overflow-y-auto">
+      <div className="card relative w-full max-w-lg max-h-[85vh] overflow-y-auto overscroll-contain">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className={`font-medium ${isReceived ? 'text-green-400' : 'text-red-400'}`}>
